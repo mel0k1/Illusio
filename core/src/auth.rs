@@ -58,10 +58,13 @@ pub fn normalize_auth_url(url: &str) -> String {
 }
 
 fn client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|error| error.to_string())
+    crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(Duration::from_secs(15))
+    .build()
+    .map_err(|error| error.to_string())
 }
 
 fn deny_message(code: &str, errors: &[String]) -> AuthError {

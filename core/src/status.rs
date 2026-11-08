@@ -25,10 +25,13 @@ pub fn status_url(server_url: &str) -> String {
 }
 
 pub fn fetch_status(server_url: &str) -> Result<ServerStatus, String> {
-    let client = crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(Duration::from_secs(15))
+    .build()
+    .map_err(|error| error.to_string())?;
     let response = client
         .get(status_url(server_url))
         .send()

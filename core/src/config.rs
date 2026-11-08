@@ -240,8 +240,7 @@ pub fn load_from(path: &PathBuf) -> Result<Config, String> {
         return Ok(Config::default());
     }
     let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let parsed: Config =
-        serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    let parsed: Config = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
     Ok(parsed.migrated())
 }
 

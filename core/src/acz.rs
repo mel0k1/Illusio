@@ -69,10 +69,13 @@ pub fn parse_manifest(text: &str) -> Result<Vec<ManifestEntry>, String> {
 }
 
 pub fn fetch_manifest(manifest_url: &str) -> Result<(Vec<ManifestEntry>, String), String> {
-    let client = crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(MANIFEST_TIMEOUT)
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(MANIFEST_TIMEOUT)
+    .build()
+    .map_err(|error| error.to_string())?;
     let response = client
         .get(manifest_url)
         .header("Accept-Encoding", "zstd")

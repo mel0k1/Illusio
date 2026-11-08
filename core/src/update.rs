@@ -71,11 +71,7 @@ pub fn check(current_version: &str) -> Result<ReleaseCheck, String> {
     let release: ReleasePayload = response
         .json()
         .map_err(|error| format!("не удалось разобрать релиз: {error}"))?;
-    let version = release
-        .tag_name
-        .trim()
-        .trim_start_matches('v')
-        .to_string();
+    let version = release.tag_name.trim().trim_start_matches('v').to_string();
     let suffix = platform_asset_suffix();
     let asset = release
         .assets
@@ -104,8 +100,7 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
         .map_err(|error| error.to_string())?
         .error_for_status()
         .map_err(|error| format!("GitHub ответил с ошибкой: {error}"))?;
-    let mut file =
-        fs::File::create(&dest).map_err(|error| error.to_string())?;
+    let mut file = fs::File::create(&dest).map_err(|error| error.to_string())?;
     let mut buffer = [0u8; 65_536];
     loop {
         let read = response
@@ -122,8 +117,7 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
 }
 
 fn exe_path() -> Result<PathBuf, String> {
-    std::env::current_exe()
-        .map_err(|error| format!("не удалось определить путь лаунчера: {error}"))
+    std::env::current_exe().map_err(|error| format!("не удалось определить путь лаунчера: {error}"))
 }
 
 fn script_dir() -> PathBuf {
@@ -154,7 +148,12 @@ fn spawn_detached(mut command: Command) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn apply_windows(archive: &Path, extracted: &Path, install: &Path, exe: &Path) -> Result<(), String> {
+fn apply_windows(
+    archive: &Path,
+    extracted: &Path,
+    install: &Path,
+    exe: &Path,
+) -> Result<(), String> {
     crate::install::extract_zip(archive, extracted)?;
     let pid = std::process::id();
     let script = script_dir().join("update.cmd");
@@ -198,7 +197,12 @@ fn apply_linux(archive: &Path, install: &Path, exe: &Path) -> Result<(), String>
 }
 
 #[cfg(target_os = "macos")]
-fn apply_macos(archive: &Path, extracted: &Path, app_dir: &Path, app_path: &Path) -> Result<(), String> {
+fn apply_macos(
+    archive: &Path,
+    extracted: &Path,
+    app_dir: &Path,
+    app_path: &Path,
+) -> Result<(), String> {
     crate::install::extract_zip(archive, extracted)?;
     let pid = std::process::id();
     let script = script_dir().join("update.sh");

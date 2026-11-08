@@ -21,10 +21,7 @@ struct Removals {
 
 impl Removals {
     fn new() -> Removals {
-        Removals {
-            files: 0,
-            bytes: 0,
-        }
+        Removals { files: 0, bytes: 0 }
     }
 
     fn add(&mut self, path: &Path) {
@@ -38,7 +35,10 @@ impl Removals {
 
 fn older_than(path: &Path, age: Duration) -> bool {
     match fs::metadata(path).and_then(|meta| meta.modified()) {
-        Ok(modified) => modified.elapsed().map(|elapsed| elapsed >= age).unwrap_or(false),
+        Ok(modified) => modified
+            .elapsed()
+            .map(|elapsed| elapsed >= age)
+            .unwrap_or(false),
         Err(_) => true,
     }
 }
@@ -266,10 +266,7 @@ mod tests {
     use super::*;
 
     fn make_old(path: &Path, days: u64) {
-        let file = fs::OpenOptions::new()
-            .append(true)
-            .open(path)
-            .unwrap();
+        let file = fs::OpenOptions::new().append(true).open(path).unwrap();
         let past = std::time::SystemTime::now() - Duration::from_secs(days * 86_400);
         file.set_times(std::fs::FileTimes::new().set_modified(past))
             .unwrap();
@@ -282,11 +279,7 @@ mod tests {
         let blobs = base.join("cache").join("blobs").join("fork");
         fs::create_dir_all(&root).unwrap();
         fs::create_dir_all(&blobs).unwrap();
-        fs::write(
-            root.join("blobs.txt"),
-            "0123456789abcdef0123456789abcdef\n",
-        )
-        .unwrap();
+        fs::write(root.join("blobs.txt"), "0123456789abcdef0123456789abcdef\n").unwrap();
         fs::write(blobs.join("0123456789abcdef0123456789abcdef.bin"), "x").unwrap();
         fs::write(blobs.join("fedcba9876543210fedcba9876543210.bin"), "y").unwrap();
         make_old(&blobs.join("fedcba9876543210fedcba9876543210.bin"), 2);

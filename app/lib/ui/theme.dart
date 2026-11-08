@@ -168,9 +168,9 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
   final buttonPadding =
       const EdgeInsets.symmetric(horizontal: 24, vertical: 14);
 
-  return base.copyWith(
+  return theme.copyWith(
     textTheme: body,
-    iconTheme: base.iconTheme.copyWith(color: scheme.onSurfaceVariant),
+    iconTheme: theme.iconTheme.copyWith(color: scheme.onSurfaceVariant),
     cardTheme: CardThemeData(
       color: scheme.surfaceContainerLow,
       elevation: 0,
@@ -249,7 +249,7 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
         return scheme.outline;
       }),
     ),
-    chipTheme: base.chipTheme.copyWith(
+    chipTheme: theme.chipTheme.copyWith(
       backgroundColor: scheme.surfaceContainerHigh,
       side: BorderSide(color: scheme.outlineVariant),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

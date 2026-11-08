@@ -84,10 +84,13 @@ pub fn info_url(server_url: &str) -> String {
 }
 
 fn status_client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(STATUS_TIMEOUT)
-        .build()
-        .map_err(|error| error.to_string())
+    crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(STATUS_TIMEOUT)
+    .build()
+    .map_err(|error| error.to_string())
 }
 
 pub fn fetch_info(server_url: &str) -> Result<ServerInfo, String> {
@@ -898,11 +901,14 @@ fn sanitize_component(value: &str) -> String {
 }
 
 fn download_client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(None)
-        .connect_timeout(DOWNLOAD_TIMEOUT)
-        .build()
-        .map_err(|error| error.to_string())
+    crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(None)
+    .connect_timeout(DOWNLOAD_TIMEOUT)
+    .build()
+    .map_err(|error| error.to_string())
 }
 
 fn sidecar_path(path: &Path) -> PathBuf {
@@ -917,11 +923,11 @@ fn download_to(url: &str, path: &Path) -> Result<(), String> {
     let resumed = fs::read_to_string(&sidecar)
         .map(|value| value.trim() == url)
         .unwrap_or(false)
-        && fs::metadata(path).map(|meta| meta.len() > 0).unwrap_or(false);
+        && fs::metadata(path)
+            .map(|meta| meta.len() > 0)
+            .unwrap_or(false);
     let mut offset = if resumed {
-        fs::metadata(path)
-            .map(|meta| meta.len())
-            .unwrap_or(0)
+        fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
     } else {
         0
     };

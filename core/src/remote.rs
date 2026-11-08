@@ -62,10 +62,13 @@ pub fn version_is_blocked(current: &str, blocked: &[String]) -> bool {
 }
 
 pub fn fetch_update_check(current_version: &str) -> Result<LauncherUpdateCheck, String> {
-    let client = crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Updates)
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Updates,
+    )
+    .timeout(Duration::from_secs(10))
+    .build()
+    .map_err(|error| error.to_string())?;
     let response = client
         .get(LAUNCHER_INFO_URL)
         .send()

@@ -609,19 +609,21 @@ pub extern "C" fn illusio_clear_cache() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn illusio_cull_content() -> *mut c_char {
-    guarded(|| match config::load().and_then(|value| cull::cull(&value)) {
-        Ok(report) => serde_json::json!({
-            "ok": true,
-            "files": report.files,
-            "bytes": report.bytes,
-        })
-        .to_string(),
-        Err(message) => serde_json::json!({
-            "ok": false,
-            "error": message,
-        })
-        .to_string(),
-    })
+    guarded(
+        || match config::load().and_then(|value| cull::cull(&value)) {
+            Ok(report) => serde_json::json!({
+                "ok": true,
+                "files": report.files,
+                "bytes": report.bytes,
+            })
+            .to_string(),
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message,
+            })
+            .to_string(),
+        },
+    )
 }
 
 #[derive(Deserialize)]
@@ -636,19 +638,20 @@ struct ContentStatePayload {
 pub unsafe extern "C" fn illusio_content_state(raw: *const c_char) -> *mut c_char {
     guarded(
         || match serde_json::from_str::<ContentStatePayload>(&read_ptr(raw)) {
-            Ok(payload) => match install::content_state(&payload.server_url, &payload.install_dir)
-            {
-                Ok(actual) => serde_json::json!({
-                    "ok": true,
-                    "actual": actual,
-                })
-                .to_string(),
-                Err(message) => serde_json::json!({
-                    "ok": false,
-                    "error": message,
-                })
-                .to_string(),
-            },
+            Ok(payload) => {
+                match install::content_state(&payload.server_url, &payload.install_dir) {
+                    Ok(actual) => serde_json::json!({
+                        "ok": true,
+                        "actual": actual,
+                    })
+                    .to_string(),
+                    Err(message) => serde_json::json!({
+                        "ok": false,
+                        "error": message,
+                    })
+                    .to_string(),
+                }
+            }
             Err(message) => serde_json::json!({
                 "ok": false,
                 "error": message.to_string(),
@@ -706,9 +709,7 @@ pub unsafe extern "C" fn illusio_self_update(raw: *const c_char) -> *mut c_char 
                     &std::env::temp_dir().join("illusio-update"),
                     &release.asset_name,
                 )
-                .and_then(|archive| {
-                    update::apply(&archive).map(|()| release.version.clone())
-                });
+                .and_then(|archive| update::apply(&archive).map(|()| release.version.clone()));
                 match result {
                     Ok(version) => serde_json::json!({
                         "ok": true,

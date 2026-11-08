@@ -116,10 +116,13 @@ pub fn hub_url(value: &str) -> String {
 }
 
 fn fetch_hub_servers(hub: &str) -> Result<Vec<HubServer>, String> {
-    let client = crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(Duration::from_secs(20))
+    .build()
+    .map_err(|error| error.to_string())?;
     let endpoint = format!("{}api/servers", hub_url(hub));
     let response = client
         .get(endpoint)
@@ -197,11 +200,14 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
 }
 
 fn ping_client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
-        .timeout(Duration::from_secs(5))
-        .connect_timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|error| error.to_string())
+    crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Launcher,
+    )
+    .timeout(Duration::from_secs(5))
+    .connect_timeout(Duration::from_secs(5))
+    .build()
+    .map_err(|error| error.to_string())
 }
 
 pub fn ping_server(url: &str) -> ServerPing {
