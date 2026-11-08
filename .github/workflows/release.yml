@@ -69,9 +69,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            (cd build/windows/x64/runner/Release && 7z a "../../../../../Illusio-${VERSION}-windows-x64.zip" .)
+            (cd build/windows/x64/runner/Release && 7z a "${GITHUB_WORKSPACE}/Illusio-${VERSION}-windows-x64.zip" .)
           elif [ "${{ matrix.platform }}" = "linux" ]; then
-            tar -czf "Illusio-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
+            tar -czf "${GITHUB_WORKSPACE}/Illusio-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
           else
             (cd build/macos/Build/Products/Release && zip -r -y -q "${GITHUB_WORKSPACE}/Illusio-${VERSION}-macos-arm64.zip" illusio.app)
           fi
