@@ -8,3 +8,5 @@ pubspec.lock
 .vscode/
 *.iml
 .DS_Store
+loader/bin/
+loader/obj/

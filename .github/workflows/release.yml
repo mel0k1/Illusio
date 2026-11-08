@@ -36,6 +36,19 @@ jobs:
         run: cargo build --release
         working-directory: core
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build loader
+        shell: bash
+        run: |
+          RID="linux-x64"
+          if [ "${{ matrix.platform }}" = "windows" ]; then RID="win-x64"; fi
+          if [ "${{ matrix.platform }}" = "macos" ]; then RID="osx-arm64"; fi
+          dotnet publish ../loader/Illusio.Loader.csproj -c Release -r "$RID" --self-contained true
+          echo "LOADER_OUT=../loader/bin/Release/net10.0/$RID/publish" >> "$GITHUB_ENV"
+
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build
@@ -62,6 +75,17 @@ jobs:
             cp ../core/target/release/libillusio.so build/linux/x64/release/bundle/lib/
           else
             cp ../core/target/release/libillusio.dylib build/macos/Build/Products/Release/illusio.app/Contents/MacOS/
+          fi
+
+      - name: Bundle loader
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp -r "${{ env.LOADER_OUT }}" build/windows/x64/runner/Release/loader
+          elif [ "${{ matrix.platform }}" = "linux" ]; then
+            cp -r "${{ env.LOADER_OUT }}" build/linux/x64/release/bundle/loader
+          else
+            cp -r "${{ env.LOADER_OUT }}" build/macos/Build/Products/Release/illusio.app/Contents/MacOS/loader
           fi
 
       - name: Package
