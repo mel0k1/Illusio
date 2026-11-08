@@ -1,136 +1,53 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:illusio/models/login_info.dart';
-import 'package:illusio/models/server_info.dart';
+import 'package:illusio/models/hub_server.dart';
 
 void main() {
-  test('parses server info payload from core', () {
-    final info = ServerFullInfo.fromMap({
-      'connect_address': 'udp://game.example.com:1212',
-      'auth': {'mode': 1, 'public_key': 'pubkey'},
-      'build': {
-        'download_url': 'https://cdn.example.com/client.zip',
-        'version': '240.1',
-        'fork_id': 'space_wizards',
-        'hash': 'deadbeef',
-        'engine_version': '240.1.0.5',
-      },
+  test('hub server parses core payload', () {
+    final server = HubServer.fromMap({
+      'address': 'ss14s://erida.example.net',
+      'name': 'Эрида',
+      'players': 25,
+      'soft_max_players': 100,
+      'tags': ['lang:ru', 'region:eu_e', '18+'],
+      'preset': 'Выживание+',
+      'map': 'Box Station',
+      'run_level': 1,
+      'round_id': 5591,
+      'status_message': 'привет',
     });
-    expect(info, isNotNull);
-    expect(info!.connectAddress, 'udp://game.example.com:1212');
-    expect(info.authMode, 1);
-    expect(info.authUsable, isTrue);
-    expect(info.build.version, '240.1');
-    expect(info.build.forkId, 'space_wizards');
+    expect(server.address, 'ss14s://erida.example.net');
+    expect(server.name, 'Эрида');
+    expect(server.playersLabel, '25/100');
+    expect(server.runLevelLabel, 'В раунде');
+    expect(server.empty, isFalse);
   });
 
-  test('auth disabled mode is not usable', () {
-    final info = ServerFullInfo.fromMap({
-      'connect_address': '',
-      'auth': {'mode': 2, 'public_key': ''},
-      'build': {},
+  test('hub server tolerates missing fields', () {
+    final server = HubServer.fromMap({
+      'address': 'ss14://example.com',
+      'name': 'Test',
+      'players': 4,
     });
-    expect(info!.authUsable, isFalse);
+    expect(server.softMaxPlayers, 0);
+    expect(server.playersLabel, '4');
+    expect(server.tags, isEmpty);
+    expect(server.runLevelLabel, 'Лобби');
   });
 
-  test('download state computes progress and labels', () {
-    const state = DownloadStateInfo(
-      phase: 'download',
-      downloaded: 52428800,
-      total: 104857600,
-      message: '',
-      error: '',
-      running: true,
-      installDir: '',
-      mode: 'acz',
-      engineZip: '/data/engine.zip',
-      contentZip: '/data/content.zip',
-      engineSig: 'sig',
-      info: null,
-    );
-    expect(state.progress, closeTo(0.5, 0.001));
-    expect(state.sizeLabel, '50.0 МБ');
-    expect(state.totalLabel, '100 МБ');
-    expect(state.phaseLabel, 'Загружаем клиент');
-    expect(state.isDone, isFalse);
-    expect(state.isError, isFalse);
-    expect(state.isAcz, isTrue);
+  test('empty hub server is marked empty', () {
+    final server = HubServer.fromMap(null);
+    expect(server.empty, isTrue);
   });
 
-  test('engine phase shows dedicated label', () {
-    const state = DownloadStateInfo(
-      phase: 'engine',
-      downloaded: 0,
-      total: 0,
-      message: '',
-      error: '',
-      running: true,
-      installDir: '',
-      mode: 'acz',
-      engineZip: '',
-      contentZip: '',
-      engineSig: '',
-      info: null,
-    );
-    expect(state.phaseLabel, 'Загружаем движок');
-    expect(state.progress, isNull);
-  });
-
-  test('download state without total has indeterminate progress', () {
-    const state = DownloadStateInfo(
-      phase: 'download',
-      downloaded: 1024,
-      total: 0,
-      message: '',
-      error: '',
-      running: true,
-      installDir: '',
-      mode: 'zip',
-      engineZip: '',
-      contentZip: '',
-      engineSig: '',
-      info: null,
-    );
-    expect(state.progress, isNull);
-    expect(state.isAcz, isFalse);
-  });
-
-  test('state parses acz fields from core payload', () {
-    final state = DownloadStateInfo.fromMap({
-      'phase': 'done',
-      'downloaded': 12,
-      'total': 12,
-      'message': 'клиент готов',
-      'error': '',
-      'running': false,
-      'install_dir': '/data/client/fork',
-      'mode': 'acz',
-      'engineZip': '/data/engine/240.zip',
-      'contentZip': '/data/client/fork/content.zip',
-      'engineSig': 'aabb',
-      'info': null,
+  test('mod entry parses and formats size', () {
+    final mod = ModEntry.fromMap({
+      'file_name': 'pack_a.zip',
+      'path': '/data/mods/pack_a.zip',
+      'size': 1048576,
     });
-    expect(state.isDone, isTrue);
-    expect(state.isAcz, isTrue);
-    expect(state.engineZip, '/data/engine/240.zip');
-    expect(state.contentZip, '/data/client/fork/content.zip');
-    expect(state.engineSig, 'aabb');
-  });
-
-  test('login info parses and roundtrips', () {
-    final login = LoginInfo.fromMap({
-      'token': 'tok',
-      'username': 'mel0k1',
-      'userId': 'guid',
-      'expireTime': '2026-12-01T00:00:00Z',
-      'authServer': 'https://auth.spacestation14.com/',
-    });
-    expect(login, isNotNull);
-    final json = login!.toJson();
-    final restored = LoginInfo.fromMap(json);
-    expect(restored!.token, 'tok');
-    expect(restored.username, 'mel0k1');
-    expect(LoginInfo.fromMap(const {}), isNull);
-    expect(LoginInfo.fromMap(null), isNull);
+    expect(mod.fileName, 'pack_a.zip');
+    expect(mod.sizeLabel, '1.00 МБ');
+    expect(ModEntry.fromMap(null).fileName, isEmpty);
   });
 }

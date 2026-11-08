@@ -63,6 +63,24 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _logout = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_logout')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _fetchServers = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_fetch_servers')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _openUrl = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_open_url')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _openPath = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_open_path')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _scanMods = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_scan_mods')
+      .asFunction();
+  static final Pointer<Utf8> Function() _modsDir = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_mods_dir')
+      .asFunction();
+  static final Pointer<Utf8> Function() _clearCache = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_clear_cache')
+      .asFunction();
   static final void Function(Pointer<Utf8>) _free = _lib
       .lookup<NativeFunction<FreeNative>>('illusio_free')
       .asFunction();
@@ -103,6 +121,23 @@ class Core {
       _withString(json, _checkToken);
 
   static Map<String, dynamic> logout(String json) => _withString(json, _logout);
+
+  static Map<String, dynamic> fetchServers(String url) =>
+      _withString(url, _fetchServers);
+
+  static Map<String, dynamic> openUrl(String url) => _withString(url, _openUrl);
+
+  static Map<String, dynamic> openPath(String path) =>
+      _withString(path, _openPath);
+
+  static Map<String, dynamic> scanMods(String dir) =>
+      _withString(dir, _scanMods);
+
+  static Map<String, dynamic> modsDir() => _run(_modsDir);
+
+  static Map<String, dynamic> clearCache() => _run(_clearCache);
+
+  static const String registerUrl = 'https://account.spacestation14.com/Register';
 
   static Map<String, dynamic> _withString(
     String value,
