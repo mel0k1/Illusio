@@ -76,7 +76,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Аккаунт SS14')),
       body: ListenableBuilder(
@@ -84,9 +83,9 @@ class _LoginScreenState extends State<LoginScreen> {
         builder: (context, _) {
           final login = widget.controller.login;
           if (login != null) {
-            return _buildAccount(theme, login);
+            return _buildAccount(context, login);
           }
-          return _buildForm(theme);
+          return _buildForm(context);
         },
       ),
     );
