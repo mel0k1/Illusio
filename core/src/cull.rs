@@ -125,10 +125,9 @@ fn cull_blobs(cache: &Path, referenced: &HashSet<String>, keep_days: i64, out: &
                 }
                 continue;
             }
-            if (name.ends_with(".part") || name.ends_with(".tmp"))
-                && older_than(&path, DAY) {
-                    out.add(&path);
-                }
+            if (name.ends_with(".part") || name.ends_with(".tmp")) && older_than(&path, DAY) {
+                out.add(&path);
+            }
         }
         if fs::read_dir(&fork_path)
             .map(|value| value.count())
@@ -161,10 +160,9 @@ fn cull_engines(root: &Path, referenced: &HashSet<String>, keep: i64, out: &mut 
             stale.push((path, modified));
             continue;
         }
-        if (name.ends_with(".tmp") || name.ends_with(".url"))
-            && older_than(&path, DAY) {
-                out.add(&path);
-            }
+        if (name.ends_with(".tmp") || name.ends_with(".url")) && older_than(&path, DAY) {
+            out.add(&path);
+        }
     }
     if stale.len() <= keep.max(0) as usize {
         return;
@@ -200,10 +198,9 @@ fn cull_bundles(root: &Path, keep: i64, out: &mut Removals) {
                     .and_then(|meta| meta.modified())
                     .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                 zips.push((path, modified));
-            } else if (name.ends_with(".tmp") || name.ends_with(".url"))
-                && older_than(&path, DAY) {
-                    out.add(&path);
-                }
+            } else if (name.ends_with(".tmp") || name.ends_with(".url")) && older_than(&path, DAY) {
+                out.add(&path);
+            }
         }
     }
     if zips.len() <= keep.max(0) as usize {
@@ -228,9 +225,10 @@ fn cull_temp(root: &Path, out: &mut Removals) {
         }
         let name = entry.file_name().to_string_lossy().to_string();
         if (name.ends_with(".tmp") || name.ends_with(".tmp.url") || name.ends_with(".url"))
-            && older_than(&path, DAY) {
-                out.add(&path);
-            }
+            && older_than(&path, DAY)
+        {
+            out.add(&path);
+        }
     }
 }
 
