@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using NSec.Cryptography;
 using Robust.LoaderApi;
 
