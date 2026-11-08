@@ -78,6 +78,11 @@ Section "Install"
   ${GetSize} "$INSTDIR" "/S=0B" $0 $1 $2
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKLM "${REGKEY}" "EstimatedSize" $0
+
+  WriteRegStr HKCR "ss14" "" "URL:Space Station 14"
+  WriteRegStr HKCR "ss14" "URL Protocol" ""
+  WriteRegStr HKCR "ss14\DefaultIcon" "" "$INSTDIR\${APPMAIN},0"
+  WriteRegStr HKCR "ss14\shell\open\command" "" '"$INSTDIR\${APPMAIN}" "%1"'
 SectionEnd
 
 Section "Uninstall"
@@ -88,6 +93,11 @@ Section "Uninstall"
 
   RMDir /r "$INSTDIR"
 
+  DeleteRegKey HKCR "ss14\shell\open\command"
+  DeleteRegKey HKCR "ss14\shell\open"
+  DeleteRegKey HKCR "ss14\shell"
+  DeleteRegKey HKCR "ss14\DefaultIcon"
+  DeleteRegKey HKCR "ss14"
   DeleteRegKey HKLM "${REGKEY}"
   DeleteRegKey HKLM "Software\${APPNAME}"
 SectionEnd
