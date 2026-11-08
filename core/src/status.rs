@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use crate::hub::normalize_server_address;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ServerStatus {
     #[serde(default)]
@@ -16,7 +18,10 @@ pub struct ServerStatus {
 }
 
 pub fn status_url(server_url: &str) -> String {
-    format!("{}/status", server_url.trim_end_matches('/'))
+    format!(
+        "{}/status",
+        normalize_server_address(server_url).trim_end_matches('/')
+    )
 }
 
 pub fn fetch_status(server_url: &str) -> Result<ServerStatus, String> {

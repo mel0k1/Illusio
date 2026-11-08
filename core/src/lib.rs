@@ -4,13 +4,16 @@ pub mod acz;
 pub mod auth;
 pub mod config;
 pub mod engine;
+pub mod hub;
 pub mod install;
 mod launch;
 pub mod status;
+pub mod sys;
 
 use serde::Deserialize;
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::ptr;
 
 fn to_ptr(value: String) -> *mut c_char {
@@ -331,6 +334,94 @@ pub unsafe extern "C" fn illusio_logout(raw: *const c_char) -> *mut c_char {
             .to_string(),
         },
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_fetch_servers(url: *const c_char) -> *mut c_char {
+    guarded(|| match hub::fetch_servers(&read_ptr(url)) {
+        Ok(servers) => serde_json::json!({
+            "ok": true,
+            "servers": servers,
+        })
+        .to_string(),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": message,
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_open_url(url: *const c_char) -> *mut c_char {
+    guarded(|| match sys::open_with_system(&read_ptr(url)) {
+        Ok(()) => serde_json::json!({"ok": true}).to_string(),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": message,
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_open_path(path: *const c_char) -> *mut c_char {
+    guarded(|| match sys::open_with_system(&read_ptr(path)) {
+        Ok(()) => serde_json::json!({"ok": true}).to_string(),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": message,
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_scan_mods(path: *const c_char) -> *mut c_char {
+    guarded(|| {
+        let dir = PathBuf::from(read_ptr(path));
+        match sys::ensure_dir(&dir).and_then(|_| sys::scan_mods(&dir)) {
+            Ok(mods) => serde_json::json!({
+                "ok": true,
+                "mods": mods,
+                "path": dir.display().to_string(),
+            })
+            .to_string(),
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message,
+            })
+            .to_string(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_mods_dir() -> *mut c_char {
+    guarded(|| match config::mods_dir() {
+        Some(path) => serde_json::json!({
+            "ok": true,
+            "path": path.display().to_string(),
+        })
+        .to_string(),
+        None => serde_json::json!({
+            "ok": false,
+            "error": "каталог конфигурации не найден",
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_clear_cache() -> *mut c_char {
+    guarded(|| match sys::clear_cache() {
+        Ok(()) => serde_json::json!({"ok": true}).to_string(),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": message,
+        })
+        .to_string(),
+    })
 }
 
 #[no_mangle]

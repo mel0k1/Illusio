@@ -48,6 +48,8 @@ pub struct LaunchSpec {
     pub content_zip: String,
     #[serde(default)]
     pub engine_sig: String,
+    #[serde(default)]
+    pub mods: Vec<String>,
 }
 
 pub fn client_path(install_dir: &str) -> PathBuf {
@@ -133,6 +135,15 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     let server = spec.auth_server.trim();
     if !server.is_empty() {
         env.push(("ROBUST_AUTH_SERVER".into(), server.to_string()));
+    }
+    let mods: Vec<String> = spec
+        .mods
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !mods.is_empty() {
+        env.push(("SS14_LOADER_OVERLAY_ZIPS".into(), mods.join(";")));
     }
     env
 }

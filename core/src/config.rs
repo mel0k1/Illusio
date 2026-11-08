@@ -5,6 +5,14 @@ use std::path::PathBuf;
 use crate::auth::LoginInfo;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FavoriteEntry {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub install_dir: String,
@@ -14,6 +22,20 @@ pub struct Config {
     pub last_server: String,
     #[serde(default)]
     pub login: Option<LoginInfo>,
+    #[serde(default)]
+    pub favorites: Vec<FavoriteEntry>,
+    #[serde(default)]
+    pub accounts: Vec<LoginInfo>,
+    #[serde(default)]
+    pub theme: String,
+    #[serde(default)]
+    pub hide_empty: bool,
+    #[serde(default)]
+    pub fullscreen: bool,
+    #[serde(default)]
+    pub vsync: bool,
+    #[serde(default)]
+    pub mods_enabled: Vec<String>,
 }
 
 pub fn config_dir() -> Option<PathBuf> {
@@ -22,6 +44,10 @@ pub fn config_dir() -> Option<PathBuf> {
 
 pub fn config_file() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("config.json"))
+}
+
+pub fn mods_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("mods"))
 }
 
 pub fn load_from(path: &PathBuf) -> Result<Config, String> {
