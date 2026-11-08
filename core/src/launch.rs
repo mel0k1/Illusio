@@ -60,6 +60,14 @@ pub struct LaunchSpec {
     pub log_dir: String,
     #[serde(default, rename = "allow_unsigned")]
     pub allow_unsigned: bool,
+    #[serde(default, rename = "patch_hwid")]
+    pub patch_hwid: bool,
+    #[serde(default, rename = "patch_rpc")]
+    pub patch_rpc: bool,
+    #[serde(default, rename = "patch_jam_dials")]
+    pub patch_jam_dials: bool,
+    #[serde(default, rename = "patch_blackhole")]
+    pub patch_blackhole: bool,
 }
 
 pub fn client_path(install_dir: &str) -> PathBuf {
@@ -164,11 +172,23 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     if !dlls.is_empty() {
         env.push(("SS14_LOADER_MOD_DLLS".into(), dlls.join(";")));
     }
+    if spec.patch_hwid {
+        env.push(("ILLUSIO_PATCH_HWID".into(), "1".into()));
+    }
+    if spec.patch_rpc {
+        env.push(("ILLUSIO_PATCH_RPC".into(), "1".into()));
+    }
+    if spec.patch_jam_dials {
+        env.push(("ILLUSIO_PATCH_JAM_DIALS".into(), "1".into()));
+    }
+    if spec.patch_blackhole {
+        env.push(("ILLUSIO_PATCH_BLACKHOLE".into(), "1".into()));
+    }
     env
 }
 
 fn apply_proxy_env(command: &mut Command, proxy: &ProxyConfig) {
-    if !proxy.enabled || !proxy.apply_to_game {
+    if !proxy.apply_to_game {
         return;
     }
     if let Some(url) = crate::socks::proxy_url(proxy) {
@@ -180,7 +200,7 @@ fn apply_proxy_env(command: &mut Command, proxy: &ProxyConfig) {
 }
 
 fn prepare_relay(proxy: &ProxyConfig, args: &mut [String]) -> Option<PreparedRelay> {
-    if !proxy.enabled || !proxy.udp_relay {
+    if !proxy.udp_relay {
         return None;
     }
     let index = args.iter().position(|value| value == "--connect-address")?;

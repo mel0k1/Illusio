@@ -41,7 +41,7 @@ pub fn encode_userinfo(value: &str) -> String {
 }
 
 pub fn proxy_url(proxy: &ProxyConfig) -> Option<String> {
-    if !proxy.enabled || proxy.host.is_empty() || proxy.port == 0 {
+    if proxy.host.is_empty() || proxy.port == 0 {
         return None;
     }
     let mut url = String::from("socks5h://");
@@ -609,7 +609,7 @@ mod relay_tests {
     fn probe_tcp_reaches_fake_socks() {
         let fake = spawn_fake_socks();
         let proxy = ProxyConfig {
-            enabled: true,
+            launcher: true,
             host: fake.addr.ip().to_string(),
             port: fake.addr.port(),
             ..Default::default()
@@ -622,7 +622,7 @@ mod relay_tests {
     fn probe_udp_associates_with_fake_socks() {
         let fake = spawn_fake_socks();
         let proxy = ProxyConfig {
-            enabled: true,
+            launcher: true,
             host: fake.addr.ip().to_string(),
             port: fake.addr.port(),
             ..Default::default()
@@ -635,7 +635,7 @@ mod relay_tests {
     fn udp_relay_roundtrip_through_fake_socks() {
         let fake = spawn_fake_socks();
         let proxy = ProxyConfig {
-            enabled: true,
+            launcher: true,
             host: fake.addr.ip().to_string(),
             port: fake.addr.port(),
             udp_relay: true,

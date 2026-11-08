@@ -23,6 +23,135 @@ internal sealed record ModInfo(
     string Name,
     string Description);
 
+internal static class BuiltInPatches
+{
+    private static readonly string[] BlackholeWhitelist =
+        { "say", "whisper", "me", "ooc", "looc", "observe", "suicide" };
+
+    public static void Apply(Harmony harmony)
+    {
+        if (Flag("ILLUSIO_PATCH_HWID"))
+            PatchHwid(harmony);
+        if (Flag("ILLUSIO_PATCH_RPC"))
+            PatchRpc(harmony);
+        if (Flag("ILLUSIO_PATCH_JAM_DIALS"))
+            PatchJamDials(harmony);
+        if (Flag("ILLUSIO_PATCH_BLACKHOLE"))
+            PatchBlackhole(harmony);
+    }
+
+    private static bool Flag(string name)
+    {
+        return Environment.GetEnvironmentVariable(name) == "1";
+    }
+
+    private static void PatchHwid(Harmony harmony)
+    {
+        var type = AccessTools.TypeByName("Robust.Client.HWId.BasicHWId");
+        if (type == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] HWID: тип не найден");
+            return;
+        }
+
+        var modern = AccessTools.Method(type, "GetModern");
+        if (modern != null)
+            harmony.Patch(modern, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+
+        var legacy = AccessTools.Method(type, "GetLegacy");
+        if (legacy != null)
+            harmony.Patch(legacy, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+
+        Console.WriteLine("[ILLUSIO-PATCH] HWID: подмена включена");
+    }
+
+    private static void PatchRpc(Harmony harmony)
+    {
+        var type = AccessTools.TypeByName("Robust.Client.Utility.DiscordRichPresence");
+        if (type == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] RPC: тип не найден");
+            return;
+        }
+
+        var initialize = AccessTools.Method(type, "Initialize");
+        if (initialize != null)
+            harmony.Patch(initialize, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(ReturnFalse)));
+
+        var update = AccessTools.Method(type, "Update");
+        if (update != null)
+            harmony.Patch(update, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(ReturnFalse)));
+
+        Console.WriteLine("[ILLUSIO-PATCH] RPC: Discord отключён");
+    }
+
+    private static void PatchJamDials(Harmony harmony)
+    {
+        var type = AccessTools.TypeByName("Robust.Client.GameController");
+        if (type == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] JAM: тип не найден");
+            return;
+        }
+
+        var redial = AccessTools.Method(type, "Redial");
+        if (redial != null)
+            harmony.Patch(redial, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(ReturnFalse)));
+
+        Console.WriteLine("[ILLUSIO-PATCH] JAM: редиал заблокирован");
+    }
+
+    private static void PatchBlackhole(Harmony harmony)
+    {
+        var type = AccessTools.TypeByName("Robust.Client.Console.ClientConsoleHost");
+        if (type == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] BLACKHOLE: тип не найден");
+            return;
+        }
+
+        var execute = AccessTools.Method(type, "RemoteExecuteCommand");
+        if (execute != null)
+            harmony.Patch(execute, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(BlackholePrefix)));
+
+        Console.WriteLine("[ILLUSIO-PATCH] BLACKHOLE: удалённые команды фильтруются");
+    }
+
+    private static byte[] RandomBytes(int length)
+    {
+        var bytes = new byte[length];
+        using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+        rng.GetBytes(bytes);
+        return bytes;
+    }
+
+    private static void HwidPostfix(ref byte[] __result)
+    {
+        if (__result.Length <= 1)
+            return;
+
+        var raw = RandomBytes(__result.Length - 1);
+        Array.Copy(raw, 0, __result, 1, raw.Length);
+    }
+
+    private static bool ReturnFalse()
+    {
+        return false;
+    }
+
+    private static bool BlackholePrefix(string command)
+    {
+        var trimmed = command.TrimStart().TrimStart('/').TrimStart();
+        foreach (var allowed in BlackholeWhitelist)
+        {
+            if (trimmed.StartsWith(allowed, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 internal class Program
 {
     private const string MarkerType = "IllusioMod";
@@ -84,6 +213,7 @@ internal class Program
                 extraMounts.Add(new ApiMount(api, "/"));
             }
 
+            ApplyBuiltInPatches(clientAssembly);
             ApplyMods(overlays);
 
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
@@ -98,6 +228,19 @@ internal class Program
             }
         }
         return true;
+    }
+
+    private void ApplyBuiltInPatches(Assembly clientAssembly)
+    {
+        var harmony = new Harmony(HarmonyId);
+        try
+        {
+            BuiltInPatches.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-PATCH] ошибка встроенных патчей: {e.Message}");
+        }
     }
 
     private void ApplyMods(IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)

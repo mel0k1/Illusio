@@ -1,10 +1,45 @@
 use crate::config::ProxyConfig;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-pub fn with_proxy(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
+static PROXY_SESSION_OFF: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    Launcher,
+    Updates,
+    Region,
+}
+
+pub fn set_session_proxy(enabled: bool) {
+    PROXY_SESSION_OFF.store(!enabled, Ordering::Relaxed);
+}
+
+pub fn session_proxy_enabled() -> bool {
+    !PROXY_SESSION_OFF.load(Ordering::Relaxed)
+}
+
+pub fn with_route(
+    builder: reqwest::blocking::ClientBuilder,
+    route: Route,
+) -> reqwest::blocking::ClientBuilder {
+    if !session_proxy_enabled() {
+        return builder;
+    }
     let proxy = crate::config::load()
         .map(|value| value.proxy())
         .unwrap_or_default();
+    if !route_enabled(&proxy, route) {
+        return builder;
+    }
     apply_proxy(builder, proxy)
+}
+
+pub fn route_enabled(proxy: &ProxyConfig, route: Route) -> bool {
+    match route {
+        Route::Launcher => proxy.launcher,
+        Route::Updates => proxy.launcher || proxy.updates,
+        Route::Region => proxy.launcher || proxy.region,
+    }
 }
 
 fn apply_proxy(
@@ -22,30 +57,58 @@ fn apply_proxy(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn proxy_url_is_empty_without_host() {
-        let proxy = crate::config::ProxyConfig {
-            enabled: true,
-            ..Default::default()
-        };
-        assert!(crate::socks::proxy_url(&proxy).is_none());
-        let proxy = crate::config::ProxyConfig {
-            enabled: true,
+    use crate::config::ProxyConfig;
+
+    fn proxy(launcher: bool, updates: bool, region: bool) -> ProxyConfig {
+        ProxyConfig {
+            launcher,
+            updates,
+            region,
             host: "127.0.0.1".into(),
             port: 1080,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn routes_combine() {
+        let value = proxy(true, false, false);
+        assert!(super::route_enabled(&value, super::Route::Launcher));
+        assert!(super::route_enabled(&value, super::Route::Updates));
+        assert!(super::route_enabled(&value, super::Route::Region));
+        let value = proxy(false, true, false);
+        assert!(!super::route_enabled(&value, super::Route::Launcher));
+        assert!(super::route_enabled(&value, super::Route::Updates));
+        assert!(!super::route_enabled(&value, super::Route::Region));
+        let value = proxy(false, false, true);
+        assert!(super::route_enabled(&value, super::Route::Region));
+        assert!(!super::route_enabled(&value, super::Route::Updates));
+    }
+
+    #[test]
+    fn proxy_url_requires_host_and_port() {
+        let value = ProxyConfig {
+            launcher: true,
+            ..Default::default()
+        };
+        assert!(super::route_enabled(&value, super::Route::Launcher));
+        assert!(crate::socks::proxy_url(&value).is_none());
+        let value = ProxyConfig {
+            host: "127.0.0.1".into(),
+            port: 1080,
+            ..value
         };
         assert_eq!(
-            crate::socks::proxy_url(&proxy).as_deref(),
+            crate::socks::proxy_url(&value).as_deref(),
             Some("socks5h://127.0.0.1:1080")
         );
-        let proxy = crate::config::ProxyConfig {
+        let value = ProxyConfig {
             username: "user".into(),
             password: "p@ss".into(),
-            ..proxy
+            ..value
         };
         assert_eq!(
-            crate::socks::proxy_url(&proxy).as_deref(),
+            crate::socks::proxy_url(&value).as_deref(),
             Some("socks5h://user:p%40ss@127.0.0.1:1080")
         );
     }

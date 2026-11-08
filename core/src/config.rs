@@ -23,6 +23,22 @@ pub struct PrivacyAccept {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProxyProfile {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub port: i64,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub install_dir: String,
@@ -71,6 +87,10 @@ pub struct Config {
     #[serde(default)]
     pub proxy_enabled: bool,
     #[serde(default)]
+    pub proxy_updates: bool,
+    #[serde(default)]
+    pub proxy_region_bypass: bool,
+    #[serde(default)]
     pub proxy_host: String,
     #[serde(default)]
     pub proxy_port: i64,
@@ -79,11 +99,45 @@ pub struct Config {
     #[serde(default)]
     pub proxy_password: String,
     #[serde(default)]
+    pub proxy_profiles: Vec<ProxyProfile>,
+    #[serde(default)]
+    pub proxy_selected: String,
+    #[serde(default)]
     pub proxy_udp_relay: bool,
     #[serde(default)]
     pub proxy_apply_to_game: bool,
     #[serde(default)]
     pub dll_mods_enabled: Vec<String>,
+    #[serde(default = "default_blob_keep_days")]
+    pub blob_keep_days: i64,
+    #[serde(default = "default_bundle_keep")]
+    pub bundle_keep: i64,
+    #[serde(default = "default_engine_keep")]
+    pub engine_keep: i64,
+    #[serde(default)]
+    pub auto_update: bool,
+    #[serde(default)]
+    pub prefetch_favorites: bool,
+    #[serde(default)]
+    pub patch_hwid: bool,
+    #[serde(default)]
+    pub patch_rpc: bool,
+    #[serde(default)]
+    pub patch_jam_dials: bool,
+    #[serde(default)]
+    pub patch_blackhole: bool,
+}
+
+fn default_blob_keep_days() -> i64 {
+    7
+}
+
+fn default_bundle_keep() -> i64 {
+    10
+}
+
+fn default_engine_keep() -> i64 {
+    2
 }
 
 fn default_language() -> String {
@@ -92,7 +146,9 @@ fn default_language() -> String {
 
 #[derive(Debug, Clone, Default)]
 pub struct ProxyConfig {
-    pub enabled: bool,
+    pub launcher: bool,
+    pub updates: bool,
+    pub region: bool,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -101,15 +157,62 @@ pub struct ProxyConfig {
     pub apply_to_game: bool,
 }
 
+impl ProxyConfig {
+    pub fn configured(&self) -> bool {
+        (self.launcher || self.updates || self.region || self.udp_relay || self.apply_to_game)
+            && !self.host.trim().is_empty()
+            && self.port > 0
+    }
+
+    pub fn any_route(&self) -> bool {
+        self.launcher || self.updates || self.region
+    }
+}
+
 impl Config {
+    pub fn migrated(mut self) -> Config {
+        if self.proxy_profiles.is_empty() && !self.proxy_host.trim().is_empty() {
+            self.proxy_profiles.push(ProxyProfile {
+                id: "default".into(),
+                name: "Default".into(),
+                host: self.proxy_host.clone(),
+                port: self.proxy_port,
+                username: self.proxy_username.clone(),
+                password: self.proxy_password.clone(),
+            });
+            if self.proxy_selected.trim().is_empty() {
+                self.proxy_selected = "default".into();
+            }
+        }
+        self
+    }
+
+    pub fn proxy_profile(&self) -> Option<&ProxyProfile> {
+        let id = self.proxy_selected.trim();
+        self.proxy_profiles
+            .iter()
+            .find(|profile| profile.id == id)
+            .or_else(|| self.proxy_profiles.first())
+    }
+
     pub fn proxy(&self) -> ProxyConfig {
-        let port = self.proxy_port.clamp(0, 65535) as u16;
+        let profile = self.proxy_profile();
         ProxyConfig {
-            enabled: self.proxy_enabled,
-            host: self.proxy_host.trim().to_string(),
-            port,
-            username: self.proxy_username.clone(),
-            password: self.proxy_password.clone(),
+            launcher: self.proxy_enabled,
+            updates: self.proxy_updates,
+            region: self.proxy_region_bypass,
+            host: profile
+                .map(|value| value.host.trim().to_string())
+                .unwrap_or_default(),
+            port: profile
+                .map(|value| value.port.clamp(0, 65535) as u16)
+                .unwrap_or(0),
+            username: profile
+                .map(|value| value.username.clone())
+                .unwrap_or_default(),
+            password: profile
+                .map(|value| value.password.clone())
+                .unwrap_or_default(),
             udp_relay: self.proxy_udp_relay,
             apply_to_game: self.proxy_apply_to_game,
         }
@@ -137,7 +240,9 @@ pub fn load_from(path: &PathBuf) -> Result<Config, String> {
         return Ok(Config::default());
     }
     let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&raw).map_err(|error| error.to_string())
+    let parsed: Config =
+        serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    Ok(parsed.migrated())
 }
 
 pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
@@ -190,10 +295,16 @@ mod tests {
             ..Config::default()
         };
         config.proxy_enabled = true;
-        config.proxy_host = "127.0.0.1".into();
-        config.proxy_port = 1080;
-        config.proxy_username = "user".into();
-        config.proxy_password = "pass".into();
+        config.proxy_updates = true;
+        config.proxy_profiles.push(ProxyProfile {
+            id: "main".into(),
+            name: "Main".into(),
+            host: "127.0.0.1".into(),
+            port: 1080,
+            username: "user".into(),
+            password: "pass".into(),
+        });
+        config.proxy_selected = "main".into();
         config.proxy_udp_relay = true;
         config.proxy_apply_to_game = true;
         config.language = "en".into();
@@ -202,8 +313,11 @@ mod tests {
         let parsed: Config = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed.hubs, config.hubs);
         assert!(parsed.proxy_enabled);
+        assert!(parsed.proxy_updates);
         assert_eq!(parsed.proxy().port, 1080);
+        assert_eq!(parsed.proxy().username, "user");
         assert!(parsed.proxy().udp_relay);
+        assert!(parsed.proxy().configured());
         assert_eq!(parsed.language, "en");
         assert_eq!(parsed.dll_mods_enabled, vec!["half.dll".to_string()]);
         assert_eq!(parsed.guest_username, "Гость");
@@ -228,5 +342,36 @@ mod tests {
         assert_eq!(parsed.language, "ru");
         assert!(!parsed.proxy_enabled);
         assert!(parsed.dll_mods_enabled.is_empty());
+    }
+
+    #[test]
+    fn migrates_legacy_proxy() {
+        let raw = r#"{"proxy_enabled":true,"proxy_host":"10.0.0.8","proxy_port":1081,"proxy_username":"u","proxy_password":"p","proxy_udp_relay":true}"#;
+        let parsed: Config = serde_json::from_str::<Config>(raw).unwrap().migrated();
+        assert_eq!(parsed.proxy_profiles.len(), 1);
+        assert_eq!(parsed.proxy_selected, "default");
+        let proxy = parsed.proxy();
+        assert_eq!(proxy.host, "10.0.0.8");
+        assert_eq!(proxy.port, 1081);
+        assert_eq!(proxy.username, "u");
+        assert!(proxy.launcher);
+        assert!(proxy.udp_relay);
+        assert!(proxy.configured());
+        assert!(proxy.any_route());
+    }
+
+    #[test]
+    fn falls_back_to_first_profile() {
+        let mut config = Config::default();
+        config.proxy_profiles.push(ProxyProfile {
+            id: "a".into(),
+            name: "A".into(),
+            host: "1.1.1.1".into(),
+            port: 1080,
+            ..ProxyProfile::default()
+        });
+        assert_eq!(config.proxy().host, "1.1.1.1");
+        config.proxy_selected = "missing".into();
+        assert_eq!(config.proxy().host, "1.1.1.1");
     }
 }

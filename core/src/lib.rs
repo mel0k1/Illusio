@@ -3,6 +3,7 @@
 pub mod acz;
 pub mod auth;
 pub mod config;
+pub mod cull;
 pub mod engine;
 pub mod http;
 pub mod hub;
@@ -12,6 +13,7 @@ pub mod remote;
 pub mod socks;
 pub mod status;
 pub mod sys;
+pub mod update;
 
 use serde::Deserialize;
 use std::ffi::{c_char, CStr, CString};
@@ -507,13 +509,44 @@ struct ProxyProbePayload {
     udp: bool,
 }
 
+#[derive(Deserialize)]
+struct ProxySessionPayload {
+    #[serde(default)]
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+struct VersionPayload {
+    #[serde(default)]
+    current: String,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_proxy_session(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<ProxySessionPayload>(&read_ptr(raw)) {
+            Ok(payload) => {
+                http::set_session_proxy(payload.enabled);
+                serde_json::json!({"ok": true}).to_string()
+            }
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn illusio_proxy_probe(raw: *const c_char) -> *mut c_char {
     guarded(
         || match serde_json::from_str::<ProxyProbePayload>(&read_ptr(raw)) {
             Ok(payload) => {
                 let proxy = config::ProxyConfig {
-                    enabled: true,
+                    launcher: true,
+                    updates: false,
+                    region: false,
                     host: payload.host.trim().to_string(),
                     port: payload.port.clamp(0, 65535) as u16,
                     username: payload.username,
@@ -572,6 +605,131 @@ pub extern "C" fn illusio_clear_cache() -> *mut c_char {
         })
         .to_string(),
     })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_cull_content() -> *mut c_char {
+    guarded(|| match config::load().and_then(|value| cull::cull(&value)) {
+        Ok(report) => serde_json::json!({
+            "ok": true,
+            "files": report.files,
+            "bytes": report.bytes,
+        })
+        .to_string(),
+        Err(message) => serde_json::json!({
+            "ok": false,
+            "error": message,
+        })
+        .to_string(),
+    })
+}
+
+#[derive(Deserialize)]
+struct ContentStatePayload {
+    #[serde(default, rename = "server_url")]
+    server_url: String,
+    #[serde(default, rename = "install_dir")]
+    install_dir: String,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_content_state(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<ContentStatePayload>(&read_ptr(raw)) {
+            Ok(payload) => match install::content_state(&payload.server_url, &payload.install_dir)
+            {
+                Ok(actual) => serde_json::json!({
+                    "ok": true,
+                    "actual": actual,
+                })
+                .to_string(),
+                Err(message) => serde_json::json!({
+                    "ok": false,
+                    "error": message,
+                })
+                .to_string(),
+            },
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_update_check(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<VersionPayload>(&read_ptr(raw)) {
+            Ok(payload) => match update::check(&payload.current) {
+                Ok(value) => serde_json::json!({
+                    "ok": true,
+                    "available": value.available,
+                    "version": value.version,
+                    "notes": value.notes,
+                    "assetName": value.asset_name,
+                    "assetUrl": value.asset_url,
+                })
+                .to_string(),
+                Err(message) => serde_json::json!({
+                    "ok": false,
+                    "error": message,
+                })
+                .to_string(),
+            },
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_self_update(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<VersionPayload>(&read_ptr(raw)) {
+            Ok(payload) => {
+                let release = match update::check(&payload.current) {
+                    Ok(value) if value.available => value,
+                    Ok(_) => {
+                        return serde_json::json!({"ok": true, "updated": false}).to_string();
+                    }
+                    Err(message) => {
+                        return serde_json::json!({"ok": false, "error": message}).to_string();
+                    }
+                };
+                let result = update::download_asset(
+                    &release.asset_url,
+                    &std::env::temp_dir().join("illusio-update"),
+                    &release.asset_name,
+                )
+                .and_then(|archive| {
+                    update::apply(&archive).map(|()| release.version.clone())
+                });
+                match result {
+                    Ok(version) => serde_json::json!({
+                        "ok": true,
+                        "updated": true,
+                        "version": version,
+                    })
+                    .to_string(),
+                    Err(message) => serde_json::json!({
+                        "ok": false,
+                        "error": message,
+                    })
+                    .to_string(),
+                }
+            }
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
 }
 
 #[no_mangle]

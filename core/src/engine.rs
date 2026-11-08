@@ -31,7 +31,7 @@ pub struct EngineVersion {
 pub type EngineManifest = HashMap<String, EngineVersion>;
 
 fn client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_proxy(reqwest::blocking::Client::builder())
+    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Region)
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| error.to_string())

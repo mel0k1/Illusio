@@ -1,7 +1,11 @@
+import 'dart:io';
+import 'dart:isolate';
+
 import 'package:flutter/material.dart';
 
 import '../../ffi/bindings.dart';
 import '../../l10n/strings.dart';
+import '../../models/proxy_profile.dart';
 import '../../state/app_controller.dart';
 import '../../version.dart';
 import '../theme.dart';
@@ -22,11 +26,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _guest = TextEditingController();
   final TextEditingController _override = TextEditingController();
   final TextEditingController _engineOverride = TextEditingController();
-  final TextEditingController _proxyHost = TextEditingController();
-  final TextEditingController _proxyPort = TextEditingController();
-  final TextEditingController _proxyUser = TextEditingController();
-  final TextEditingController _proxyPass = TextEditingController();
-  bool _proxyPassObscured = true;
   bool _proxyBusy = false;
   String _proxyResult = '';
   Color _proxyResultColor = Colors.transparent;
@@ -51,12 +50,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _guest.text = controller.guestUsername;
       _override.text = controller.usernameOverride;
       _engineOverride.text = controller.engineOverride;
-      _proxyHost.text = controller.proxyHost;
-      _proxyPort.text = controller.proxyPort > 0
-          ? controller.proxyPort.toString()
-          : '1080';
-      _proxyUser.text = controller.proxyUsername;
-      _proxyPass.text = controller.proxyPassword;
     });
     final path = await controller.configDirPath();
     if (!mounted) {
@@ -75,10 +68,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _guest.dispose();
     _override.dispose();
     _engineOverride.dispose();
-    _proxyHost.dispose();
-    _proxyPort.dispose();
-    _proxyUser.dispose();
-    _proxyPass.dispose();
     super.dispose();
   }
 
@@ -99,27 +88,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .showSnackBar(illusioSnackBar(s.clientSaved));
   }
 
-  Future<void> _saveProxy() async {
-    final s = S.of(context);
-    final port = int.tryParse(_proxyPort.text.trim()) ?? 1080;
-    widget.controller.setProxyFields(
-      host: _proxyHost.text.trim(),
-      port: port.clamp(1, 65535),
-      username: _proxyUser.text.trim(),
-      password: _proxyPass.text,
-    );
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context)
-        .showSnackBar(illusioSnackBar(s.proxySaved));
-  }
-
   Future<void> _probeProxy() async {
     final s = S.of(context);
     final scheme = Theme.of(context).colorScheme;
     final messenger = ScaffoldMessenger.of(context);
-    await _saveProxy();
+    if (!widget.controller.proxyConfigured) {
+      messenger.showSnackBar(illusioSnackBar(s.proxyNoProfiles));
+      return;
+    }
     setState(() {
       _proxyBusy = true;
       _proxyResult = s.proxyTesting;
@@ -159,13 +135,130 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ));
   }
 
-  Future<void> _clearCache() async {
+  Future<void> _editProxyProfile(ProxyProfileInfo? existing) async {
     final s = S.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await widget.controller.clearCache();
-    messenger.showSnackBar(
-      illusioSnackBar(ok ? s.cacheCleared : s.cacheFailed),
+    final name = TextEditingController(text: existing?.name ?? '');
+    final host = TextEditingController(text: existing?.host ?? '');
+    final port = TextEditingController(
+        text: existing != null && existing.port > 0
+            ? existing.port.toString()
+            : '1080');
+    final user = TextEditingController(text: existing?.username ?? '');
+    final pass = TextEditingController(text: existing?.password ?? '');
+    bool obscured = true;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(
+              existing == null ? s.addProxyProfile : s.editProxyProfile),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: name,
+                  autofocus: existing == null,
+                  decoration: illusioInput(
+                    s.proxyProfileName,
+                    hint: s.proxyProfileNameHint,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: host,
+                        decoration: illusioInput(
+                            s.proxyHost, hint: '127.0.0.1'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: port,
+                        keyboardType: TextInputType.number,
+                        decoration: illusioInput(s.proxyPort, hint: '1080'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: user,
+                  decoration: illusioInput(
+                    s.proxyUser,
+                    hint: s.proxyUserHint,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pass,
+                  obscureText: obscured,
+                  decoration: illusioInput(
+                    s.proxyPassword,
+                    suffix: IconButton(
+                      onPressed: () => setDialogState(
+                          () => obscured = !obscured),
+                      icon: Icon(
+                        obscured
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(s.cancel),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (host.text.trim().isEmpty) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: Text(s.save),
+            ),
+          ],
+        ),
+      ),
     );
+    name.dispose();
+    host.dispose();
+    port.dispose();
+    user.dispose();
+    pass.dispose();
+    if (saved != true || !mounted) {
+      return;
+    }
+    final id = existing?.id ??
+        'p${DateTime.now().millisecondsSinceEpoch}';
+    widget.controller.upsertProxyProfile(
+      ProxyProfileInfo(
+        id: id,
+        name: name.text.trim().isEmpty
+            ? host.text.trim()
+            : name.text.trim(),
+        host: host.text.trim(),
+        port: int.tryParse(port.text.trim())?.clamp(1, 65535) ?? 1080,
+        username: user.text.trim(),
+        password: pass.text,
+      ),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(illusioSnackBar(S.of(context).proxySaved));
+    }
   }
 
   Future<void> _saveAccount() async {
@@ -228,6 +321,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  List<(String, String, Color)> _themeChips(AppController controller) {
+    final s = S.of(context);
+    return [
+      (s.themeDark, 'dark', const Color(0xFFFFD65C)),
+      (s.themeDarkRed, 'darkRed', const Color(0xFFFFB4A0)),
+      (s.themeDarkPurple, 'darkPurple', const Color(0xFFD0B4FF)),
+      (s.themeMidnightBlue, 'midnightBlue', const Color(0xFFAAC7FF)),
+      (s.themeEmeraldDusk, 'emeraldDusk', const Color(0xFF93D69B)),
+      (s.themeCopperNight, 'copperNight', const Color(0xFFFFB77E)),
+      (s.themeLight, 'light', const Color(0xFFF4ECDF)),
+    ];
+  }
+
+  Future<void> _clearCache() async {
+    final s = S.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await Isolate.run(Core.cullContent);
+    if (result['ok'] != true) {
+      messenger.showSnackBar(illusioSnackBar(s.cacheFailed));
+      return;
+    }
+    final files = (result['files'] as num?)?.toInt() ?? 0;
+    final bytes = (result['bytes'] as num?)?.toInt() ?? 0;
+    messenger.showSnackBar(
+      illusioSnackBar(
+        files > 0
+            ? '${s.cacheCleared}: $files · ${s.formatBytes(bytes)}'
+            : s.cacheCleared,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -261,22 +386,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 14),
-                  SegmentedButton<String>(
-                    segments: [
-                      ButtonSegment(
-                        value: 'dark',
-                        icon: const Icon(Icons.dark_mode_outlined, size: 18),
-                        label: Text(s.themeDark),
-                      ),
-                      ButtonSegment(
-                        value: 'light',
-                        icon: const Icon(Icons.light_mode_outlined, size: 18),
-                        label: Text(s.themeLight),
-                      ),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final preset in _themeChips(controller))
+                        ChoiceChip(
+                          label: Text(preset.$1),
+                          selected: controller.theme == preset.$2,
+                          onSelected: (_) => controller.setTheme(preset.$2),
+                          avatar: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: preset.$3,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: scheme.outlineVariant,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
-                    selected: {controller.theme == 'light' ? 'light' : 'dark'},
-                    onSelectionChanged: (selection) =>
-                        controller.setTheme(selection.first),
                   ),
                   const SizedBox(height: 18),
                   Text(s.language, style: theme.textTheme.titleMedium),
@@ -455,77 +586,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(s.proxyProfiles, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.proxyProfilesHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  if (controller.proxyProfiles.isEmpty)
+                    Text(
+                      s.proxyNoProfiles,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    )
+                  else
+                    for (final profile in controller.proxyProfiles)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: ListTile(
+                          onTap: () =>
+                              controller.selectProxyProfile(profile.id),
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          tileColor: scheme.surfaceContainerLow,
+                          leading: Icon(
+                            controller.selectedProxyProfile?.id == profile.id
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 20,
+                            color: controller.selectedProxyProfile?.id ==
+                                    profile.id
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          title: Text(
+                            profile.name,
+                            style: theme.textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            '${profile.host}:${profile.port}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _editProxyProfile(profile),
+                                icon: const Icon(Icons.edit_outlined,
+                                    size: 18),
+                                tooltip: s.editProxyProfile,
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () =>
+                                    controller.removeProxyProfile(profile.id),
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 18),
+                                tooltip: s.deleteProxyProfile,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    onPressed: () => _editProxyProfile(null),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: Text(s.addProxyProfile),
+                  ),
+                  const SizedBox(height: 14),
                   _SwitchRow(
                     title: s.proxyEnable,
                     subtitle: s.proxyEnableHint,
                     value: controller.proxyEnabled,
                     onChanged: controller.setProxyEnabled,
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextField(
-                          controller: _proxyHost,
-                          decoration:
-                              illusioInput(s.proxyHost, hint: '127.0.0.1'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _proxyPort,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              illusioInput(s.proxyPort, hint: '1080'),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.proxyUpdatesEnable,
+                    subtitle: s.proxyUpdatesHint,
+                    value: controller.proxyUpdates,
+                    onChanged: controller.setProxyUpdates,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _proxyUser,
-                    decoration: illusioInput(
-                      s.proxyUser,
-                      hint: s.proxyUserHint,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _proxyPass,
-                    obscureText: _proxyPassObscured,
-                    decoration: illusioInput(
-                      s.proxyPassword,
-                      suffix: IconButton(
-                        onPressed: () => setState(
-                            () => _proxyPassObscured = !_proxyPassObscured),
-                        icon: Icon(
-                          _proxyPassObscured
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 20,
-                        ),
-                      ),
-                    ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.proxyRegionEnable,
+                    subtitle: s.proxyRegionHint,
+                    value: controller.proxyRegionBypass,
+                    onChanged: controller.setProxyRegionBypass,
                   ),
                   const SizedBox(height: 8),
                   _SwitchRow(
                     title: s.proxyUdp,
                     subtitle: s.proxyUdpHint,
                     value: controller.proxyUdpRelay,
-                    onChanged: (value) => controller.setProxyFields(
-                      udpRelay: value,
-                    ),
+                    onChanged: controller.setProxyUdpRelay,
                   ),
                   const SizedBox(height: 8),
                   _SwitchRow(
                     title: s.proxyApply,
                     subtitle: s.proxyApplyHint,
                     value: controller.proxyApplyToGame,
-                    onChanged: (value) => controller.setProxyFields(
-                      applyToGame: value,
-                    ),
+                    onChanged: controller.setProxyApplyToGame,
                   ),
                   if (_proxyResult.isNotEmpty) ...[
                     const SizedBox(height: 12),
@@ -536,21 +708,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: _proxyBusy ? null : _probeProxy,
+                      icon: const Icon(Icons.network_check, size: 20),
+                      label: Text(s.proxyTest),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionLabel(s.updatesSection),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: _card(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.currentVersion(appVersion),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.autoUpdateLabel,
+                    subtitle: s.autoUpdateHint,
+                    value: controller.autoUpdate,
+                    onChanged: controller.setAutoUpdate,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.prefetchLabel,
+                    subtitle: s.prefetchHint,
+                    value: controller.prefetchFavorites,
+                    onChanged: controller.setPrefetchFavorites,
+                  ),
+                  if (controller.updateVersion.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      s.updateAvailable(controller.updateVersion),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
+                  if (controller.updateError.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      s.updateFailed(controller.updateError),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                  ],
+                  if (controller.updateApplied) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      s.updateAppliedText,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
                     alignment: WrapAlignment.end,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _proxyBusy ? null : _probeProxy,
-                        icon: const Icon(Icons.network_check, size: 20),
-                        label: Text(s.proxyTest),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: _saveProxy,
-                        child: Text(s.save),
-                      ),
+                      if (controller.updateApplied)
+                        FilledButton(
+                          onPressed: () => exit(0),
+                          child: Text(s.restartNow),
+                        )
+                      else if (controller.updateVersion.isNotEmpty)
+                        FilledButton(
+                          onPressed: controller.updateBusy
+                              ? null
+                              : () => controller.applyUpdate(),
+                          child: Text(
+                            controller.updateBusy
+                                ? s.updateDownloading
+                                : s.updateDownload,
+                          ),
+                        )
+                      else
+                        OutlinedButton.icon(
+                          onPressed: controller.updateBusy
+                              ? null
+                              : () => controller.checkForUpdates(),
+                          icon: const Icon(Icons.update, size: 20),
+                          label: Text(
+                            controller.updateBusy
+                                ? s.checkingUpdates
+                                : s.checkUpdates,
+                          ),
+                        ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionLabel(s.safetySection),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: _card(context),
+              child: Column(
+                children: [
+                  _SwitchRow(
+                    title: s.patchHwidLabel,
+                    subtitle: s.patchHwidHint,
+                    value: controller.patchHwid,
+                    onChanged: controller.setPatchHwid,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.patchRpcLabel,
+                    subtitle: s.patchRpcHint,
+                    value: controller.patchRpc,
+                    onChanged: controller.setPatchRpc,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.patchJamLabel,
+                    subtitle: s.patchJamHint,
+                    value: controller.patchJamDials,
+                    onChanged: controller.setPatchJamDials,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.patchBlackholeLabel,
+                    subtitle: s.patchBlackholeHint,
+                    value: controller.patchBlackhole,
+                    onChanged: controller.setPatchBlackhole,
                   ),
                 ],
               ),

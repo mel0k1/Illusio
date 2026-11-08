@@ -30,9 +30,9 @@ Unicode True
 
 Name "${APPNAME}"
 OutFile "${OUTDIR}\Illusio-${VERSION}-windows-x64-setup.exe"
-InstallDir "$PROGRAMFILES64\${APPNAME}"
-InstallDirRegKey HKLM "Software\${APPNAME}" "InstallDir"
-RequestExecutionLevel admin
+InstallDir "$LOCALAPPDATA\${APPNAME}"
+InstallDirRegKey HKCU "Software\${APPNAME}" "InstallDir"
+RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
@@ -64,20 +64,20 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\uninstall.exe"
   CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${APPMAIN}"
 
-  WriteRegStr HKLM "Software\${APPNAME}" "InstallDir" "$INSTDIR"
-  WriteRegStr HKLM "${REGKEY}" "DisplayName" "${APPNAME}"
-  WriteRegStr HKLM "${REGKEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "${REGKEY}" "Publisher" "${PUBLISHER}"
-  WriteRegStr HKLM "${REGKEY}" "DisplayIcon" "$INSTDIR\${APPMAIN}"
-  WriteRegStr HKLM "${REGKEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${REGKEY}" "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "${REGKEY}" "QuietUninstallString" "$INSTDIR\uninstall.exe /S"
-  WriteRegDWORD HKLM "${REGKEY}" "NoModify" 1
-  WriteRegDWORD HKLM "${REGKEY}" "NoRepair" 1
+  WriteRegStr HKCU "Software\${APPNAME}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKCU "${REGKEY}" "DisplayName" "${APPNAME}"
+  WriteRegStr HKCU "${REGKEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "${REGKEY}" "Publisher" "${PUBLISHER}"
+  WriteRegStr HKCU "${REGKEY}" "DisplayIcon" "$INSTDIR\${APPMAIN}"
+  WriteRegStr HKCU "${REGKEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${REGKEY}" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr HKCU "${REGKEY}" "QuietUninstallString" "$INSTDIR\uninstall.exe /S"
+  WriteRegDWORD HKCU "${REGKEY}" "NoModify" 1
+  WriteRegDWORD HKCU "${REGKEY}" "NoRepair" 1
 
   ${GetSize} "$INSTDIR" "/S=0B" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "${REGKEY}" "EstimatedSize" $0
+  WriteRegDWORD HKCU "${REGKEY}" "EstimatedSize" $0
 
   WriteRegStr HKCR "ss14" "" "URL:Space Station 14"
   WriteRegStr HKCR "ss14" "URL Protocol" ""
@@ -98,6 +98,6 @@ Section "Uninstall"
   DeleteRegKey HKCR "ss14\shell"
   DeleteRegKey HKCR "ss14\DefaultIcon"
   DeleteRegKey HKCR "ss14"
-  DeleteRegKey HKLM "${REGKEY}"
-  DeleteRegKey HKLM "Software\${APPNAME}"
+  DeleteRegKey HKCU "${REGKEY}"
+  DeleteRegKey HKCU "Software\${APPNAME}"
 SectionEnd

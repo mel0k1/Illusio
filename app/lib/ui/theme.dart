@@ -90,9 +90,52 @@ const Duration effectsFast = Duration(milliseconds: 160);
 const Curve springCurve = Curves.easeOutBack;
 const Curve expressCurve = Curves.easeOutCubic;
 
-ThemeData buildIllusioTheme(Brightness brightness) {
-  final scheme = brightness == Brightness.dark ? darkScheme : lightScheme;
-  final base = ThemeData(
+class IllusioPreset {
+  const IllusioPreset(
+    this.id,
+    this.primary,
+    this.onPrimary,
+    this.primaryContainer,
+    this.onPrimaryContainer,
+  );
+
+  final String id;
+  final Color primary;
+  final Color onPrimary;
+  final Color primaryContainer;
+  final Color onPrimaryContainer;
+}
+
+const List<IllusioPreset> illusioPresets = [
+  IllusioPreset('dark', signalAmber, Color(0xFF3A2E00), Color(0xFF5C4800), Color(0xFFFFE08D)),
+  IllusioPreset('darkRed', Color(0xFFFFB4A0), Color(0xFF5B1500), Color(0xFF7C2C00), Color(0xFFFFDBCF)),
+  IllusioPreset('darkPurple', Color(0xFFD0B4FF), Color(0xFF381E72), Color(0xFF4F378B), Color(0xFFEADDFF)),
+  IllusioPreset('midnightBlue', Color(0xFFAAC7FF), Color(0xFF002F67), Color(0xFF00458F), Color(0xFFD6E3FF)),
+  IllusioPreset('emeraldDusk', calmGreen, Color(0xFF00390F), Color(0xFF1F5123), Color(0xFFB4F1B5)),
+  IllusioPreset('copperNight', Color(0xFFFFB77E), Color(0xFF4A2800), Color(0xFF6B3D0D), Color(0xFFFFDCC2)),
+];
+
+ColorScheme _applyPreset(ColorScheme scheme, String preset) {
+  for (final value in illusioPresets) {
+    if (value.id != preset) {
+      continue;
+    }
+    return scheme.copyWith(
+      primary: value.primary,
+      onPrimary: value.onPrimary,
+      primaryContainer: value.primaryContainer,
+      onPrimaryContainer: value.onPrimaryContainer,
+    );
+  }
+  return scheme;
+}
+
+ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
+  final base = brightness == Brightness.dark ? darkScheme : lightScheme;
+  final scheme = brightness == Brightness.dark
+      ? _applyPreset(base, preset)
+      : base;
+  final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
@@ -100,7 +143,7 @@ ThemeData buildIllusioTheme(Brightness brightness) {
     splashFactory: InkSparkle.splashFactory,
   );
   final textTheme = GoogleFonts.robotoFlexTextTheme(
-    base.textTheme
+    theme.textTheme
         .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface),
   );
   final body = textTheme.copyWith(

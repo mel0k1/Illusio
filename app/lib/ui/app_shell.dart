@@ -54,11 +54,70 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+  bool _proxyDialogShown = false;
 
   @override
   void initState() {
     super.initState();
     _consumePendingConnect();
+    widget.controller.addListener(_watchProxy);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_watchProxy);
+    super.dispose();
+  }
+
+  void _watchProxy() {
+    if (_proxyDialogShown || !widget.controller.proxyUnavailable) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _proxyDialogShown = true;
+    _showProxyDialog();
+  }
+
+  Future<void> _showProxyDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final error = widget.controller.proxyProbeError;
+    final disable = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.report_outlined),
+        title: Text(S.of(dialogContext).proxyUnavailableTitle),
+        content: Text(
+          S.of(dialogContext).proxyUnavailableBody(
+                error.isEmpty ? 'timeout' : error,
+              ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(S.of(dialogContext).proxyKeepTrying),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(S.of(dialogContext).proxyContinueNoProxy),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    _proxyDialogShown = false;
+    if (disable == true) {
+      await widget.controller.continueWithoutProxy();
+      messenger.showSnackBar(
+        illusioSnackBar(S.of(context).proxySessionOffNotice),
+      );
+    } else {
+      widget.controller.dismissProxyWarning();
+    }
   }
 
   Future<void> _consumePendingConnect() async {

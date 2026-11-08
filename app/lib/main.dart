@@ -89,8 +89,14 @@ class _IllusioAppState extends State<IllusioApp> {
           s: _controller.s,
           child: MaterialApp(
             title: 'Illusio',
-            theme: buildIllusioTheme(Brightness.light),
-            darkTheme: buildIllusioTheme(Brightness.dark),
+            theme: buildIllusioTheme(
+              Brightness.light,
+              preset: _controller.theme,
+            ),
+            darkTheme: buildIllusioTheme(
+              Brightness.dark,
+              preset: _controller.theme,
+            ),
             themeMode: mode,
             home: _blocked
                 ? _BlockedScreen(reason: _blockReason)

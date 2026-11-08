@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -8,9 +9,11 @@ import '../ffi/bindings.dart';
 import '../l10n/strings.dart';
 import '../models/hub_server.dart';
 import '../models/login_info.dart';
+import '../models/proxy_profile.dart';
 import '../models/server.dart';
 import '../models/server_info.dart';
 import '../models/server_status.dart';
+import '../version.dart';
 
 class AppController extends ChangeNotifier {
   AppController()
@@ -46,12 +49,31 @@ class AppController extends ChangeNotifier {
   List<Map<String, String>> acceptedPrivacy = [];
 
   bool proxyEnabled = false;
-  String proxyHost = '';
-  int proxyPort = 1080;
-  String proxyUsername = '';
-  String proxyPassword = '';
+  bool proxyUpdates = false;
+  bool proxyRegionBypass = false;
   bool proxyUdpRelay = false;
   bool proxyApplyToGame = false;
+  final List<ProxyProfileInfo> proxyProfiles = [];
+  String proxySelected = '';
+  bool proxyUnavailable = false;
+  bool proxySessionOff = false;
+  String proxyProbeError = '';
+
+  bool autoUpdate = false;
+  bool prefetchFavorites = false;
+  bool patchHwid = false;
+  bool patchRpc = false;
+  bool patchJamDials = false;
+  bool patchBlackhole = false;
+
+  String updateVersion = '';
+  String updateNotes = '';
+  bool updateBusy = false;
+  bool updateApplied = false;
+  String updateError = '';
+  Timer? _refreshTimer;
+  Timer? _prefetchTimer;
+  bool _prefetchRunning = false;
 
   bool get ru => language != 'en';
 
@@ -147,12 +169,24 @@ class AppController extends ChangeNotifier {
               })
           .toList();
       proxyEnabled = config['proxy_enabled'] == true;
-      proxyHost = config['proxy_host']?.toString() ?? '';
-      proxyPort = (config['proxy_port'] as num?)?.toInt() ?? 1080;
-      proxyUsername = config['proxy_username']?.toString() ?? '';
-      proxyPassword = config['proxy_password']?.toString() ?? '';
+      proxyUpdates = config['proxy_updates'] == true;
+      proxyRegionBypass = config['proxy_region_bypass'] == true;
       proxyUdpRelay = config['proxy_udp_relay'] == true;
       proxyApplyToGame = config['proxy_apply_to_game'] == true;
+      proxyProfiles
+        ..clear()
+        ..addAll(
+          ((config['proxy_profiles'] as List?) ?? const [])
+              .map((value) => ProxyProfileInfo.fromMap(value as Map?))
+              .toList(),
+        );
+      proxySelected = config['proxy_selected']?.toString() ?? '';
+      autoUpdate = config['auto_update'] == true;
+      prefetchFavorites = config['prefetch_favorites'] == true;
+      patchHwid = config['patch_hwid'] == true;
+      patchRpc = config['patch_rpc'] == true;
+      patchJamDials = config['patch_jam_dials'] == true;
+      patchBlackhole = config['patch_blackhole'] == true;
       dllModsEnabled
         ..clear()
         ..addAll(
@@ -169,7 +203,140 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     await _loadAuxDirs();
+    _startTimers();
     _refreshSession();
+    _checkProxyOnStartup();
+    if (autoUpdate) {
+      checkForUpdates(auto: true);
+    }
+  }
+
+  void _startTimers() {
+    _refreshTimer?.cancel();
+    _prefetchTimer?.cancel();
+    _refreshTimer = Timer.periodic(
+      const Duration(hours: 12),
+      (_) => _refreshSession(),
+    );
+    _prefetchTimer = Timer.periodic(
+      const Duration(minutes: 10),
+      (_) => prefetchLoop(),
+    );
+  }
+
+  DateTime? _expiry(String raw) {
+    final parsed = DateTime.tryParse(raw.trim());
+    return parsed?.toUtc();
+  }
+
+  bool _tokenExpiringSoon(LoginInfo account) {
+    final expiry = _expiry(account.expireTime);
+    if (expiry == null) {
+      return true;
+    }
+    return expiry.difference(DateTime.now().toUtc()) <=
+        const Duration(days: 15);
+  }
+
+  Future<bool> _refreshOne(LoginInfo account) async {
+    final payload = jsonEncode({
+      'auth_url':
+          account.authServer.isEmpty ? Core.defaultAuthUrl : account.authServer,
+      'username': account.username,
+      'user_id': account.userId,
+      'token': account.token,
+    });
+    final result = await Isolate.run(() => Core.refreshLogin(payload));
+    if (result['ok'] != true) {
+      return false;
+    }
+    final updated = LoginInfo.fromMap(result['login']);
+    if (updated == null) {
+      return false;
+    }
+    final index = accounts.indexWhere(
+      (value) => value.username == updated.username,
+    );
+    if (index >= 0) {
+      accounts[index] = updated;
+    }
+    if (login?.username == updated.username) {
+      login = updated;
+    }
+    return true;
+  }
+
+  Future<void> ensureFreshLogin() async {
+    final current = login;
+    if (current == null || current.token.isEmpty || !_tokenExpiringSoon(current)) {
+      return;
+    }
+    await _refreshOne(current);
+    await saveConfig();
+    notifyListeners();
+  }
+
+  ProxyProfileInfo? get selectedProxyProfile {
+    final id = proxySelected.trim();
+    for (final profile in proxyProfiles) {
+      if (profile.id == id) {
+        return profile;
+      }
+    }
+    return proxyProfiles.isEmpty ? null : proxyProfiles.first;
+  }
+
+  bool get proxyConfigured {
+    final profile = selectedProxyProfile;
+    if (profile == null || profile.host.trim().isEmpty || profile.port <= 0) {
+      return false;
+    }
+    return proxyEnabled ||
+        proxyUpdates ||
+        proxyRegionBypass ||
+        proxyUdpRelay ||
+        proxyApplyToGame;
+  }
+
+  Future<void> _checkProxyOnStartup() async {
+    if (!proxyConfigured) {
+      return;
+    }
+    final result = await proxyProbe(proxyUdpRelay);
+    if (result['ok'] == true) {
+      return;
+    }
+    proxyProbeError = result['error']?.toString() ?? '';
+    proxyUnavailable = true;
+    notifyListeners();
+  }
+
+  void dismissProxyWarning() {
+    proxyUnavailable = false;
+    notifyListeners();
+  }
+
+  Future<void> continueWithoutProxy() async {
+    proxyUnavailable = false;
+    proxySessionOff = true;
+    notifyListeners();
+    await Isolate.run(
+        () => Core.proxySession(jsonEncode({'enabled': false})));
+  }
+
+  Future<void> resumeProxySession() async {
+    if (!proxySessionOff) {
+      return;
+    }
+    proxySessionOff = false;
+    notifyListeners();
+    await Isolate.run(
+        () => Core.proxySession(jsonEncode({'enabled': true})));
+  }
+
+  ProxyProfileInfo? proxyProbeTarget() {
+    final profile = selectedProxyProfile;
+    return profile;
   }
 
   bool _accountsContain(LoginInfo info) {
@@ -212,13 +379,19 @@ class AppController extends ChangeNotifier {
       'accepted_privacy': acceptedPrivacy,
       'language': language,
       'proxy_enabled': proxyEnabled,
-      'proxy_host': proxyHost,
-      'proxy_port': proxyPort,
-      'proxy_username': proxyUsername,
-      'proxy_password': proxyPassword,
+      'proxy_updates': proxyUpdates,
+      'proxy_region_bypass': proxyRegionBypass,
+      'proxy_profiles': proxyProfiles.map((value) => value.toJson()).toList(),
+      'proxy_selected': proxySelected,
       'proxy_udp_relay': proxyUdpRelay,
       'proxy_apply_to_game': proxyApplyToGame,
       'dll_mods_enabled': dllModsEnabled,
+      'auto_update': autoUpdate,
+      'prefetch_favorites': prefetchFavorites,
+      'patch_hwid': patchHwid,
+      'patch_rpc': patchRpc,
+      'patch_jam_dials': patchJamDials,
+      'patch_blackhole': patchBlackhole,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
@@ -246,35 +419,91 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _refreshSession() async {
-    final current = login;
-    if (current == null || current.token.isEmpty) {
-      return;
+    final expiring = [
+      if (login != null && login!.token.isNotEmpty) login!,
+      ...accounts.where(
+        (account) =>
+            account.token.isNotEmpty &&
+            account.username != login?.username &&
+            _tokenExpiringSoon(account),
+      ),
+    ];
+    var changed = false;
+    for (final account in expiring) {
+      final ok = await _refreshOne(account);
+      changed = changed || ok;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
-    final payload = jsonEncode({
-      'auth_url':
-          current.authServer.isEmpty ? Core.defaultAuthUrl : current.authServer,
-      'username': current.username,
-      'user_id': current.userId,
-      'token': current.token,
-    });
-    final result = await Isolate.run(() => Core.refreshLogin(payload));
-    if (result['ok'] == true) {
-      final updated = LoginInfo.fromMap(result['login']);
-      if (updated != null) {
-        login = updated;
-        final index = accounts.indexWhere(
-          (account) => account.username == updated.username,
-        );
-        if (index >= 0) {
-          accounts[index] = updated;
-        }
-        await saveConfig();
-        notifyListeners();
-      }
-    } else {
-      login = null;
+    if (changed) {
       await saveConfig();
       notifyListeners();
+    }
+  }
+
+  Future<void> prefetchLoop() async {
+    if (_prefetchRunning || connecting || !prefetchFavorites) {
+      return;
+    }
+    if (downloadState.running) {
+      return;
+    }
+    _prefetchRunning = true;
+    try {
+      for (final server in List<GameServer>.from(sortedFavorites)) {
+        if (!prefetchFavorites || connecting || downloadState.running) {
+          break;
+        }
+        final state = await Isolate.run(
+          () => Core.contentState(jsonEncode({
+                'server_url': server.url,
+                'install_dir': installDir,
+              })),
+        );
+        if (state['ok'] != true || state['actual'] == true) {
+          continue;
+        }
+        if (!await _favoritePrivacyAccepted(server.url)) {
+          continue;
+        }
+        await _backgroundDownload(server);
+      }
+    } finally {
+      _prefetchRunning = false;
+    }
+  }
+
+  Future<bool> _favoritePrivacyAccepted(String url) async {
+    final result = await Isolate.run(() => Core.fetchInfo(url));
+    if (result['ok'] != true) {
+      return false;
+    }
+    final info = ServerFullInfo.fromMap(result['info']);
+    if (info == null) {
+      return false;
+    }
+    return privacyAccepted(info.privacyPolicy);
+  }
+
+  Future<void> _backgroundDownload(GameServer server) async {
+    final payload = jsonEncode({
+      'server_url': server.url,
+      'install_dir': installDir,
+    });
+    final started = await Isolate.run(() => Core.startDownload(payload));
+    if (started['ok'] != true) {
+      return;
+    }
+    while (true) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      final result = await Isolate.run(Core.downloadState);
+      if (result['ok'] != true) {
+        continue;
+      }
+      downloadState = DownloadStateInfo.fromMap(result['state']);
+      notifyListeners();
+      if (downloadState.isDone || downloadState.isError) {
+        return;
+      }
     }
   }
 
@@ -527,45 +756,159 @@ class AppController extends ChangeNotifier {
   void setProxyEnabled(bool value) {
     proxyEnabled = value;
     notifyListeners();
+    resumeProxySession();
     saveConfig();
   }
 
-  void setProxyFields({
-    String? host,
-    int? port,
-    String? username,
-    String? password,
-    bool? udpRelay,
-    bool? applyToGame,
-  }) {
-    if (host != null) {
-      proxyHost = host;
+  void setProxyUpdates(bool value) {
+    proxyUpdates = value;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void setProxyRegionBypass(bool value) {
+    proxyRegionBypass = value;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void setProxyUdpRelay(bool value) {
+    proxyUdpRelay = value;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void setProxyApplyToGame(bool value) {
+    proxyApplyToGame = value;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void selectProxyProfile(String id) {
+    proxySelected = id;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void upsertProxyProfile(ProxyProfileInfo profile) {
+    final index = proxyProfiles.indexWhere((value) => value.id == profile.id);
+    if (index >= 0) {
+      proxyProfiles[index] = profile;
+    } else {
+      proxyProfiles.add(profile);
     }
-    if (port != null) {
-      proxyPort = port;
+    if (proxySelected.trim().isEmpty) {
+      proxySelected = profile.id;
     }
-    if (username != null) {
-      proxyUsername = username;
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void removeProxyProfile(String id) {
+    proxyProfiles.removeWhere((value) => value.id == id);
+    if (proxySelected == id) {
+      proxySelected = proxyProfiles.isEmpty ? '' : proxyProfiles.first.id;
     }
-    if (password != null) {
-      proxyPassword = password;
-    }
-    if (udpRelay != null) {
-      proxyUdpRelay = udpRelay;
-    }
-    if (applyToGame != null) {
-      proxyApplyToGame = applyToGame;
-    }
+    notifyListeners();
+    resumeProxySession();
+    saveConfig();
+  }
+
+  void setAutoUpdate(bool value) {
+    autoUpdate = value;
     notifyListeners();
     saveConfig();
   }
 
+  void setPrefetchFavorites(bool value) {
+    prefetchFavorites = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchHwid(bool value) {
+    patchHwid = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchRpc(bool value) {
+    patchRpc = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchJamDials(bool value) {
+    patchJamDials = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchBlackhole(bool value) {
+    patchBlackhole = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  Future<void> checkForUpdates({bool auto = false}) async {
+    if (updateBusy) {
+      return;
+    }
+    final payload = jsonEncode({'current': appVersion});
+    final result = await Isolate.run(() => Core.updateCheck(payload));
+    if (result['ok'] != true) {
+      if (!auto) {
+        updateError = result['error']?.toString() ?? '';
+        notifyListeners();
+      }
+      return;
+    }
+    updateError = '';
+    if (result['available'] == true) {
+      updateVersion = result['version']?.toString() ?? '';
+      updateNotes = result['notes']?.toString() ?? '';
+      if (auto) {
+        await applyUpdate();
+        return;
+      }
+    } else {
+      updateVersion = '';
+      updateNotes = '';
+    }
+    notifyListeners();
+  }
+
+  Future<void> applyUpdate() async {
+    if (updateBusy || updateVersion.isEmpty) {
+      return;
+    }
+    updateBusy = true;
+    updateError = '';
+    notifyListeners();
+    final payload = jsonEncode({'current': appVersion});
+    final result = await Isolate.run(() => Core.selfUpdate(payload));
+    updateBusy = false;
+    if (result['ok'] == true && result['updated'] == true) {
+      updateApplied = true;
+    } else if (result['ok'] != true) {
+      updateError = result['error']?.toString() ?? '';
+    }
+    notifyListeners();
+  }
+
   Future<Map<String, dynamic>> proxyProbe(bool udp) async {
+    final profile = selectedProxyProfile;
     final payload = jsonEncode({
-      'host': proxyHost,
-      'port': proxyPort,
-      'username': proxyUsername,
-      'password': proxyPassword,
+      'host': profile?.host ?? '',
+      'port': profile?.port ?? 0,
+      'username': profile?.username ?? '',
+      'password': profile?.password ?? '',
       'udp': udp,
     });
     return Isolate.run(() => Core.proxyProbe(payload));
@@ -831,6 +1174,10 @@ class AppController extends ChangeNotifier {
       'mod_dlls': acz ? enabledDllPaths() : [],
       'log_dir': logDir,
       'allow_unsigned': useOverride,
+      'patch_hwid': patchHwid,
+      'patch_rpc': patchRpc,
+      'patch_jam_dials': patchJamDials,
+      'patch_blackhole': patchBlackhole,
     };
   }
 
@@ -842,6 +1189,8 @@ class AppController extends ChangeNotifier {
     selectedServer = server;
     downloadState = DownloadStateInfo.empty;
     notifyListeners();
+
+    await ensureFreshLogin();
 
     final payload = jsonEncode({
       'server_url': server.url,

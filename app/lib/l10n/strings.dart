@@ -158,6 +158,11 @@ class S {
       ru ? 'тёмная включена по умолчанию' : 'dark is enabled by default';
   String get themeDark => ru ? 'Тёмная' : 'Dark';
   String get themeLight => ru ? 'Светлая' : 'Light';
+  String get themeDarkRed => ru ? 'Тёмно-красная' : 'Dark red';
+  String get themeDarkPurple => ru ? 'Тёмно-фиолетовая' : 'Dark purple';
+  String get themeMidnightBlue => ru ? 'Полночный синий' : 'Midnight blue';
+  String get themeEmeraldDusk => ru ? 'Изумрудные сумерки' : 'Emerald dusk';
+  String get themeCopperNight => ru ? 'Медная ночь' : 'Copper night';
   String get languageLabel => ru ? 'Язык' : 'Language';
   String get languageHint => ru ? 'интерфейс приложения и подписи' : 'app interface and labels';
   String get gameSection => ru ? 'Игра' : 'Game';
@@ -216,9 +221,31 @@ class S {
   String get coreLabel => ru ? 'ядро' : 'core';
 
   String get proxySection => ru ? 'Прокси' : 'Proxy';
-  String get proxyEnable => ru ? 'Использовать прокси' : 'Use proxy';
+  String get proxyProfiles => ru ? 'Профили' : 'Profiles';
+  String get proxyProfilesHint => ru
+      ? 'выберите активный профиль SOCKS5'
+      : 'pick the active SOCKS5 profile';
+  String get addProxyProfile => ru ? 'Добавить профиль' : 'Add profile';
+  String get editProxyProfile => ru ? 'Изменить профиль' : 'Edit profile';
+  String get deleteProxyProfile => ru ? 'Удалить профиль' : 'Delete profile';
+  String get proxyProfileName => ru ? 'Название' : 'Name';
+  String get proxyProfileNameHint =>
+      ru ? 'например, рабочий SOCKS5' : 'for example, office SOCKS5';
+  String get proxyNoProfiles => ru
+      ? 'профилей пока нет — добавьте первый'
+      : 'no profiles yet — add the first one';
+  String get proxyEnable => ru ? 'Прокси для лаунчера' : 'Proxy for the launcher';
   String get proxyEnableHint =>
       ru ? 'весь трафик лаунчера идёт через SOCKS5' : 'all launcher traffic goes through SOCKS5';
+  String get proxyUpdatesEnable => ru ? 'Прокси для обновлений' : 'Proxy for updates';
+  String get proxyUpdatesHint => ru
+      ? 'launcher-data и GitHub идут через SOCKS5'
+      : 'launcher-data and GitHub go through SOCKS5';
+  String get proxyRegionEnable =>
+      ru ? 'Обход региональной блокировки' : 'Region block bypass';
+  String get proxyRegionHint => ru
+      ? 'CDN сборок движка идёт через прокси'
+      : 'the engine builds CDN goes through the proxy';
   String get proxyHost => ru ? 'Хост прокси' : 'Proxy host';
   String get proxyPort => ru ? 'Порт прокси' : 'Proxy port';
   String get proxyUser => ru ? 'Логин прокси' : 'Proxy username';
@@ -242,6 +269,64 @@ class S {
   String get proxyNoUdp => ru
       ? 'прокси работает, но UDP не поддерживается'
       : 'proxy works but UDP is not supported';
+  String get proxyUnavailableTitle =>
+      ru ? 'Прокси недоступен' : 'Proxy unavailable';
+  String proxyUnavailableBody(String error) => ru
+      ? 'Проверка SOCKS5 не прошла: $error. Продолжить без прокси? Прокси включится снова при изменении настроек.'
+      : 'The SOCKS5 probe failed: $error. Continue without the proxy? It turns back on when settings change.';
+  String get proxyContinueNoProxy =>
+      ru ? 'Продолжить без прокси' : 'Continue without proxy';
+  String get proxyKeepTrying => ru ? 'Оставить как есть' : 'Keep as is';
+  String get proxySessionOffNotice => ru
+      ? 'Прокси отключён до изменения настроек'
+      : 'Proxy disabled until settings change';
+
+  String get updatesSection => ru ? 'Обновления лаунчера' : 'Launcher updates';
+  String currentVersion(String version) =>
+      ru ? 'Текущая версия: $version' : 'Current version: $version';
+  String get checkUpdates => ru ? 'Проверить обновления' : 'Check for updates';
+  String get checkingUpdates => ru ? 'Проверяем…' : 'Checking…';
+  String updateAvailable(String version) =>
+      ru ? 'Доступна версия $version' : 'Version $version available';
+  String get updateDownload =>
+      ru ? 'Скачать и установить' : 'Download and install';
+  String get updateDownloading => ru ? 'Скачиваем…' : 'Downloading…';
+  String get updateAppliedText => ru
+      ? 'Обновление скачано и установится при выходе из лаунчера'
+      : 'The update is downloaded and applies when the launcher exits';
+  String get restartNow => ru ? 'Закрыть и обновить' : 'Exit and update';
+  String get updateLatest =>
+      ru ? 'У вас последняя версия' : 'You are on the latest version';
+  String updateFailed(String error) =>
+      ru ? 'Ошибка обновления: $error' : 'Update failed: $error';
+  String get autoUpdateLabel =>
+      ru ? 'Обновлять автоматически' : 'Update automatically';
+  String get autoUpdateHint => ru
+      ? 'скачивать новые версии при запуске'
+      : 'download new versions at startup';
+  String get prefetchLabel => ru ? 'Предзагрузка избранного' : 'Prefetch favorites';
+  String get prefetchHint => ru
+      ? 'обновлять сборки избранных серверов в фоне'
+      : 'keep favorite server builds up to date in background';
+
+  String get safetySection => ru ? 'Безопасность' : 'Safety';
+  String get patchHwidLabel => ru ? 'Подменять HWID' : 'Spoof HWID';
+  String get patchHwidHint => ru
+      ? 'случайный идентификатор железа при каждом запуске клиента'
+      : 'random hardware id on every client launch';
+  String get patchRpcLabel => ru ? 'Отключить Discord RPC' : 'Disable Discord RPC';
+  String get patchRpcHint => ru
+      ? 'клиент не пишет статус в Discord'
+      : 'the client stops updating Discord presence';
+  String get patchJamLabel => ru ? 'Блокировать редиал' : 'Jam redials';
+  String get patchJamHint => ru
+      ? 'клиент не переподключается на другой сервер по команде'
+      : 'the client ignores server-command redirects';
+  String get patchBlackholeLabel =>
+      ru ? 'Фильтр удалённых команд' : 'Remote command filter';
+  String get patchBlackholeHint => ru
+      ? 'сервер не может выполнять произвольные консольные команды, чат разрешён'
+      : 'the server cannot run arbitrary console commands, chat stays allowed';
 
   String get modsTitle => mods;
   String get modsSubtitle => ru

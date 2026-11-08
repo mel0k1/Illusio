@@ -84,7 +84,7 @@ pub fn info_url(server_url: &str) -> String {
 }
 
 fn status_client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_proxy(reqwest::blocking::Client::builder())
+    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
         .timeout(STATUS_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())
@@ -353,6 +353,23 @@ pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
     Ok(())
 }
 
+pub fn content_state(server_url: &str, install_dir_raw: &str) -> Result<bool, String> {
+    let info = fetch_info(server_url)?;
+    let build = info.build.clone();
+    let root = resolve_install_root(install_dir_raw)?;
+    let fork = build.fork_id.trim();
+    let target = if fork.is_empty() {
+        root.join("client")
+    } else {
+        root.join(sanitize_component(fork))
+    };
+    let stored = read_marker(&target);
+    Ok(match stored {
+        Some(stored) => build_matches(&stored, &build),
+        None => false,
+    })
+}
+
 fn run_job(spec: DownloadSpec) {
     let result = if spec.bundle_zip.trim().is_empty() {
         execute(&spec.server_url, &spec.install_dir)
@@ -361,14 +378,27 @@ fn run_job(spec: DownloadSpec) {
         execute_bundle(&spec)
     };
     match result {
-        Ok((target, info, message, bundle)) => set_state(|state| {
-            state.phase = "done".into();
-            state.message = message;
-            state.install_dir = target.display().to_string();
-            state.info = Some(info);
-            state.bundle_zip = bundle;
-            state.running = false;
-        }),
+        Ok((target, info, message, bundle)) => {
+            let report = crate::config::load()
+                .and_then(|config| crate::cull::cull(&config))
+                .ok();
+            let cull_note = match report {
+                Some(value) if value.files > 0 => format!(
+                    " · очищено {} файлов ({:.1} МБ)",
+                    value.files,
+                    value.bytes as f64 / 1_048_576.0
+                ),
+                _ => String::new(),
+            };
+            set_state(|state| {
+                state.phase = "done".into();
+                state.message = format!("{message}{cull_note}");
+                state.install_dir = target.display().to_string();
+                state.info = Some(info);
+                state.bundle_zip = bundle;
+                state.running = false;
+            })
+        }
         Err(message) => set_state(|state| {
             state.phase = "error".into();
             state.error = message;
@@ -520,9 +550,11 @@ fn prepare_engine(root: &Path, engine_version: &str) -> Result<(PathBuf, String)
         let digest = sha256_file(&engine_temp)?;
         if !digest.eq_ignore_ascii_case(platform.sha256.trim()) {
             fs::remove_file(&engine_temp).ok();
+            fs::remove_file(sidecar_path(&engine_temp)).ok();
             return Err("хэш движка не совпал".into());
         }
         fs::rename(&engine_temp, &engine_zip).map_err(|error| error.to_string())?;
+        fs::remove_file(sidecar_path(&engine_temp)).ok();
     }
     let engine_sig = platform.sig.trim().to_string();
     if engine_sig.is_empty() {
@@ -615,7 +647,6 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
             }
             Err(message) => {
                 last_error = message;
-                fs::remove_file(&temp_file).ok();
             }
         }
     }
@@ -626,10 +657,12 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
         let actual = sha256_file(&temp_file)?;
         if !actual.eq_ignore_ascii_case(&hash_part) {
             fs::remove_file(&temp_file).ok();
+            fs::remove_file(sidecar_path(&temp_file)).ok();
             return Err("хэш базовой сборки не совпал".into());
         }
     }
     fs::rename(&temp_file, &target).map_err(|error| error.to_string())?;
+    fs::remove_file(sidecar_path(&temp_file)).ok();
     Ok(target)
 }
 
@@ -761,6 +794,13 @@ fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload
         set_state(|state| state.downloaded = done);
     })?;
 
+    let blob_list: String = acz::unique_entries(&entries)
+        .into_iter()
+        .map(|entry| entry.hash_hex)
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(target.join("blobs.txt"), blob_list).map_err(|error| error.to_string())?;
+
     Ok(AczPayload {
         manifest_hash,
         engine_zip,
@@ -802,7 +842,6 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
             }
             Err(message) => {
                 last_error = message;
-                fs::remove_file(&temp_file).ok();
             }
         }
     }
@@ -819,6 +858,7 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
         let expected = build.hash.trim().to_ascii_lowercase();
         if !actual.eq_ignore_ascii_case(&expected) {
             fs::remove_file(&zip_path).ok();
+            fs::remove_file(sidecar_path(&zip_path)).ok();
             return Err("хэш сборки не совпал, файл повреждён".into());
         }
     }
@@ -833,6 +873,7 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
     }
     extract_zip(&zip_path, target)?;
     fs::remove_file(&zip_path).ok();
+    fs::remove_file(sidecar_path(&zip_path)).ok();
 
     Ok("клиент готов".into())
 }
@@ -857,29 +898,70 @@ fn sanitize_component(value: &str) -> String {
 }
 
 fn download_client() -> Result<reqwest::blocking::Client, String> {
-    crate::http::with_proxy(reqwest::blocking::Client::builder())
+    crate::http::with_route(reqwest::blocking::Client::builder(), crate::http::Route::Launcher)
         .timeout(None)
         .connect_timeout(DOWNLOAD_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())
 }
 
+fn sidecar_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".url");
+    PathBuf::from(name)
+}
+
 fn download_to(url: &str, path: &Path) -> Result<(), String> {
     let client = download_client()?;
-    let response = client.get(url).send().map_err(|error| error.to_string())?;
+    let sidecar = sidecar_path(path);
+    let resumed = fs::read_to_string(&sidecar)
+        .map(|value| value.trim() == url)
+        .unwrap_or(false)
+        && fs::metadata(path).map(|meta| meta.len() > 0).unwrap_or(false);
+    let mut offset = if resumed {
+        fs::metadata(path)
+            .map(|meta| meta.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let mut request = client.get(url);
+    if offset > 0 {
+        request = request.header("Range", format!("bytes={offset}-"));
+    }
+    let response = request.send().map_err(|error| error.to_string())?;
+    if offset > 0 && response.status().as_u16() == 206 {
+        set_state(|state| state.message = "продолжаем загрузку".into());
+    } else {
+        offset = 0;
+    }
     if response.status().as_u16() == 404 {
         return Err(format!("файл не найден: {url}"));
     }
     let mut response = response
         .error_for_status()
         .map_err(|error| error.to_string())?;
-    let total = response.content_length().unwrap_or(0);
-    set_state(|state| state.total = total);
+    let total = response
+        .content_length()
+        .map(|length| length + offset)
+        .unwrap_or(0);
+    set_state(|state| {
+        state.total = total;
+        state.downloaded = offset;
+    });
 
-    let mut file = fs::File::create(path).map_err(|error| error.to_string())?;
+    let mut file = if offset > 0 {
+        fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(|error| error.to_string())?
+    } else {
+        fs::File::create(path).map_err(|error| error.to_string())?
+    };
+    fs::write(&sidecar, url).map_err(|error| error.to_string())?;
     let mut buffer = [0u8; 65536];
-    let mut downloaded: u64 = 0;
-    let mut last_report: u64 = 0;
+    let mut downloaded: u64 = offset;
+    let mut last_report: u64 = downloaded;
     loop {
         let read = response
             .read(&mut buffer)

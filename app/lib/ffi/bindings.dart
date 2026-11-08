@@ -90,6 +90,21 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _proxyProbe = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_proxy_probe')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _proxySession = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_proxy_session')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _contentState = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_content_state')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _updateCheck = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_update_check')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _selfUpdate = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_self_update')
+      .asFunction();
+  static final Pointer<Utf8> Function() _cullContent = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_cull_content')
+      .asFunction();
   static final Pointer<Utf8> Function() _logsDir = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_logs_dir')
       .asFunction();
@@ -158,6 +173,20 @@ class Core {
 
   static Map<String, dynamic> proxyProbe(String json) =>
       _withString(json, _proxyProbe);
+
+  static Map<String, dynamic> proxySession(String json) =>
+      _withString(json, _proxySession);
+
+  static Map<String, dynamic> contentState(String json) =>
+      _withString(json, _contentState);
+
+  static Map<String, dynamic> updateCheck(String json) =>
+      _withString(json, _updateCheck);
+
+  static Map<String, dynamic> selfUpdate(String json) =>
+      _withString(json, _selfUpdate);
+
+  static Map<String, dynamic> cullContent() => _run(_cullContent);
 
   static const String registerUrl =
       'https://account.spacestation14.com/Register';
