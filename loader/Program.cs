@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
@@ -56,30 +57,46 @@ internal class Program
         if (!TryGetLoader(clientAssembly, out var loader))
             return false;
 
-        var overlayZip = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIP");
-        ZipFileApi? overlayApi = null;
-        IEnumerable<ApiMount>? extraMounts = null;
-        if (!string.IsNullOrEmpty(overlayZip))
-        {
-            var overlayArchive = new ZipArchive(
-                File.OpenRead(overlayZip),
-                ZipArchiveMode.Read);
-
-            overlayApi = new ZipFileApi(overlayArchive, "");
-            extraMounts = [new ApiMount(overlayApi, "/")];
-        }
-
-        var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
-
+        var contentZip = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIP");
+        var modZips = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIPS");
+        var overlays = ParseOverlayZips(
+            string.Join(';', new[] { contentZip, modZips }.Where(part => !string.IsNullOrWhiteSpace(part))));
+        var extraMounts = new List<ApiMount>();
         try
         {
+            foreach (var (api, archive) in overlays)
+            {
+                extraMounts.Add(new ApiMount(api, "/"));
+            }
+
+            var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
+
             loader.Main(args);
         }
         finally
         {
-            overlayApi?.Dispose();
+            foreach (var (_, archive) in overlays)
+            {
+                archive.Dispose();
+            }
         }
         return true;
+    }
+
+    private static List<(ZipFileApi Api, ZipArchive Archive)> ParseOverlayZips(string raw)
+    {
+        var result = new List<(ZipFileApi, ZipArchive)>();
+        foreach (var part in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!File.Exists(part))
+            {
+                continue;
+            }
+
+            var archive = new ZipArchive(File.OpenRead(part), ZipArchiveMode.Read);
+            result.Add((new ZipFileApi(archive, ""), archive));
+        }
+        return result;
     }
 
     private static bool TryGetLoader(Assembly clientAssembly, [NotNullWhen(true)] out ILoaderEntryPoint? loader)
