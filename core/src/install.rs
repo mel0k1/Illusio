@@ -53,6 +53,30 @@ pub struct ServerInfo {
     pub auth: ServerAuthInfo,
     #[serde(default)]
     pub desc: String,
+    #[serde(default)]
+    pub links: Vec<ServerLink>,
+    #[serde(default, rename = "privacy_policy")]
+    pub privacy_policy: Option<ServerPrivacy>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServerLink {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default)]
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServerPrivacy {
+    #[serde(default)]
+    pub link: String,
+    #[serde(default)]
+    pub identifier: String,
+    #[serde(default)]
+    pub version: String,
 }
 
 pub fn info_url(server_url: &str) -> String {
@@ -232,6 +256,12 @@ pub struct DownloadState {
     pub content_zip: String,
     #[serde(rename = "engineSig")]
     pub engine_sig: String,
+    #[serde(
+        rename = "bundleZip",
+        skip_serializing_if = "String::is_empty",
+        default
+    )]
+    pub bundle_zip: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub info: Option<ServerInfo>,
 }
@@ -242,6 +272,20 @@ pub struct DownloadSpec {
     pub server_url: String,
     #[serde(default, rename = "install_dir")]
     pub install_dir: String,
+    #[serde(default, rename = "bundle_zip")]
+    pub bundle_zip: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct BundleInfo {
+    #[serde(rename = "engineVersion")]
+    pub engine_version: String,
+    #[serde(rename = "baseBuild")]
+    pub base_build: ServerBuild,
+    #[serde(rename = "bundleZip")]
+    pub bundle_zip: String,
+    #[serde(rename = "fullBuild")]
+    pub full_build: bool,
 }
 
 struct Job {
@@ -275,8 +319,9 @@ pub fn snapshot() -> DownloadState {
 }
 
 pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
+    let bundle_zip = spec.bundle_zip.trim().to_string();
     let server_url = spec.server_url.trim().to_string();
-    if server_url.is_empty() {
+    if server_url.is_empty() && bundle_zip.is_empty() {
         return Err("не указан адрес сервера".into());
     }
     let install_dir = spec.install_dir.trim().to_string();
@@ -291,19 +336,37 @@ pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
     state.total = 0;
     state.install_dir = String::new();
     state.info = None;
+    state.bundle_zip = String::new();
+    state.mode = String::new();
+    state.engine_zip = String::new();
+    state.content_zip = String::new();
+    state.engine_sig = String::new();
     state.running = true;
     drop(state);
-    thread::spawn(move || run_job(server_url, install_dir));
+    thread::spawn(move || {
+        run_job(DownloadSpec {
+            server_url,
+            install_dir,
+            bundle_zip,
+        })
+    });
     Ok(())
 }
 
-fn run_job(server_url: String, install_dir_raw: String) {
-    match execute(&server_url, &install_dir_raw) {
-        Ok((target, info, message)) => set_state(|state| {
+fn run_job(spec: DownloadSpec) {
+    let result = if spec.bundle_zip.trim().is_empty() {
+        execute(&spec.server_url, &spec.install_dir)
+            .map(|(target, info, message)| (target, info, message, String::new()))
+    } else {
+        execute_bundle(&spec)
+    };
+    match result {
+        Ok((target, info, message, bundle)) => set_state(|state| {
             state.phase = "done".into();
             state.message = message;
             state.install_dir = target.display().to_string();
             state.info = Some(info);
+            state.bundle_zip = bundle;
             state.running = false;
         }),
         Err(message) => set_state(|state| {
@@ -424,20 +487,19 @@ struct AczPayload {
     message: String,
 }
 
-fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload, String> {
-    let engine_version = build.engine_version.trim();
-    if engine_version.is_empty() {
-        return Err("сервер не указал версию движка".into());
+fn prepare_engine(root: &Path, engine_version: &str) -> Result<(PathBuf, String), String> {
+    let version = engine_version.trim();
+    if version.is_empty() {
+        return Err("не указана версия движка".into());
     }
-
     set_state(|state| {
         state.phase = "engine".into();
-        state.message = format!("получаем движок {engine_version}");
+        state.message = format!("получаем движок {version}");
         state.downloaded = 0;
         state.total = 0;
     });
     let manifest = engine::fetch_engine_manifest()?;
-    let (resolved_version, rid, platform) = engine::find_engine(&manifest, engine_version)?;
+    let (resolved_version, rid, platform) = engine::find_engine(&manifest, version)?;
     let engine_root = root.join("engine");
     fs::create_dir_all(&engine_root).map_err(|error| error.to_string())?;
     let engine_zip = engine::engine_cache_path(&engine_root, &resolved_version, rid);
@@ -466,6 +528,168 @@ fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload
     if engine_sig.is_empty() {
         return Err("у сборки движка нет подписи".into());
     }
+    Ok((engine_zip, engine_sig))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BundleMeta {
+    #[serde(default, rename = "engine_version")]
+    engine_version: String,
+    #[serde(default, rename = "base_build")]
+    base_build: ServerBuild,
+}
+
+pub fn read_bundle_meta(zip_path: &Path) -> Result<(BundleMeta, bool), String> {
+    let file = fs::File::open(zip_path).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut has_manifest = false;
+    let mut meta: Option<BundleMeta> = None;
+    for index in 0..archive.len() {
+        let name = archive.name_for_index(index).unwrap_or("").to_string();
+        if name == "manifest.yml" {
+            has_manifest = true;
+        }
+        if name == "rt_content_bundle.json" {
+            let mut entry = archive
+                .by_index(index)
+                .map_err(|error| format!("повреждённый архив: {error}"))?;
+            let mut raw = String::new();
+            entry
+                .read_to_string(&mut raw)
+                .map_err(|error| error.to_string())?;
+            meta = Some(
+                serde_json::from_str::<BundleMeta>(&raw)
+                    .map_err(|error| format!("некорректный rt_content_bundle.json: {error}"))?,
+            );
+        }
+    }
+    match meta {
+        Some(meta) => Ok((meta, has_manifest)),
+        None => Err("в архиве нет rt_content_bundle.json: это не реплей content bundle".into()),
+    }
+}
+
+fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, String> {
+    let candidates = zip_candidates(build);
+    if candidates.is_empty() {
+        return Err("в base_build нет ссылки на загрузку клиента".into());
+    }
+    let mut folder_name = sanitize_component(&build.fork_id);
+    if folder_name == "client" {
+        folder_name = "bundle-base".into();
+    }
+    let dir = root.join("bundles").join(folder_name);
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let hash_part = build.hash.trim().to_ascii_lowercase();
+    let name_part = if hash_part.is_empty() {
+        sanitize_component(&build.version)
+    } else {
+        format!(
+            "{}-{}",
+            sanitize_component(&build.version),
+            &hash_part[..8.min(hash_part.len())]
+        )
+    };
+    let target = dir.join(format!("{name_part}.zip"));
+    if fs::metadata(&target)
+        .map(|meta| meta.len() > 0)
+        .unwrap_or(false)
+        && (hash_part.is_empty() || sha256_file(&target)?.eq_ignore_ascii_case(&hash_part))
+    {
+        return Ok(target);
+    }
+    let temp_file = dir.join(format!("illusio-{}.zip.tmp", std::process::id()));
+    let mut last_error = String::new();
+    let mut downloaded = false;
+    for candidate in &candidates {
+        set_state(|state| {
+            state.phase = "download".into();
+            state.downloaded = 0;
+            state.total = 0;
+            state.message = "загружаем базовую сборку бандла".into();
+        });
+        match download_to(candidate, &temp_file) {
+            Ok(()) => {
+                downloaded = true;
+                break;
+            }
+            Err(message) => {
+                last_error = message;
+                fs::remove_file(&temp_file).ok();
+            }
+        }
+    }
+    if !downloaded {
+        return Err(format!("не удалось скачать базовую сборку: {last_error}"));
+    }
+    if !hash_part.is_empty() {
+        let actual = sha256_file(&temp_file)?;
+        if !actual.eq_ignore_ascii_case(&hash_part) {
+            fs::remove_file(&temp_file).ok();
+            return Err("хэш базовой сборки не совпал".into());
+        }
+    }
+    fs::rename(&temp_file, &target).map_err(|error| error.to_string())?;
+    Ok(target)
+}
+
+fn execute_bundle(spec: &DownloadSpec) -> Result<(PathBuf, ServerInfo, String, String), String> {
+    let bundle_zip = PathBuf::from(spec.bundle_zip.trim());
+    if !bundle_zip.exists() {
+        return Err("файл бандла не найден".into());
+    }
+    let (meta, has_manifest) = read_bundle_meta(&bundle_zip)?;
+    let root = resolve_install_root(&spec.install_dir)?;
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+
+    let engine_version = if meta.engine_version.trim().is_empty() {
+        meta.base_build.engine_version.clone()
+    } else {
+        meta.engine_version.clone()
+    };
+    let (engine_zip, engine_sig) = prepare_engine(&root, &engine_version)?;
+
+    let content_zip = if has_manifest {
+        bundle_zip.clone()
+    } else {
+        download_content_zip(&meta.base_build, &root)?
+    };
+
+    let target = root.join("bundle");
+    fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    let info = ServerInfo {
+        connect_address: String::new(),
+        build: ServerBuild {
+            version: meta.base_build.version.clone(),
+            fork_id: meta.base_build.fork_id.clone(),
+            engine_version,
+            hash: meta.base_build.hash.clone(),
+            manifest_hash: meta.base_build.manifest_hash.clone(),
+            ..ServerBuild::default()
+        },
+        ..ServerInfo::default()
+    };
+    let bundle_path = if has_manifest {
+        String::new()
+    } else {
+        bundle_zip.display().to_string()
+    };
+    set_state(|state| {
+        state.mode = "acz".into();
+        state.engine_zip = engine_zip.display().to_string();
+        state.content_zip = content_zip.display().to_string();
+        state.engine_sig = engine_sig;
+        state.message = "реплей готов к запуску".into();
+    });
+    Ok((target, info, "content bundle готов".into(), bundle_path))
+}
+
+fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload, String> {
+    let engine_version = build.engine_version.trim();
+    if engine_version.is_empty() {
+        return Err("сервер не указал версию движка".into());
+    }
+    let (engine_zip, engine_sig) = prepare_engine(root, engine_version)?;
 
     set_state(|state| {
         state.phase = "download".into();
@@ -810,6 +1034,73 @@ mod tests {
         extract_zip(&zip_path, &target).unwrap();
         assert!(target.join("Robust.Client").exists());
         assert!(target.join("data/config.txt").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reads_bundle_meta() {
+        let dir = std::env::temp_dir().join(format!("illusio-bundle-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("replay.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        writer
+            .start_file("rt_content_bundle.json", options)
+            .unwrap();
+        writer.write_all(
+            br#"{"server_gc":true,"engine_version":"240.1.0.5","base_build":{"download_url":"https://cdn.example.com/builds","version":"240.1","fork_id":"space_wizards","hash":"abc"}}"#,
+        ).unwrap();
+        writer
+            .start_file("data/save.bin", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"round").unwrap();
+        writer.finish().unwrap();
+        let (meta, has_manifest) = read_bundle_meta(&zip_path).unwrap();
+        assert!(!has_manifest);
+        assert_eq!(meta.engine_version, "240.1.0.5");
+        assert_eq!(meta.base_build.fork_id, "space_wizards");
+        assert_eq!(meta.base_build.hash, "abc");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detects_full_bundle_by_manifest() {
+        let dir = std::env::temp_dir().join(format!("illusio-bundle-full-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("full.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("manifest.yml", options).unwrap();
+        writer.write_all(b"files: []").unwrap();
+        writer
+            .start_file("rt_content_bundle.json", options)
+            .unwrap();
+        writer
+            .write_all(br#"{"engine_version":"240.1.0.5"}"#)
+            .unwrap();
+        writer.finish().unwrap();
+        let (meta, has_manifest) = read_bundle_meta(&zip_path).unwrap();
+        assert!(has_manifest);
+        assert_eq!(meta.engine_version, "240.1.0.5");
+        assert!(meta.base_build.download_url.is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rejects_zip_without_bundle_marker() {
+        let dir = std::env::temp_dir().join(format!("illusio-bundle-bad-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("plain.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file("readme.txt", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"hi").unwrap();
+        writer.finish().unwrap();
+        assert!(read_bundle_meta(&zip_path).is_err());
         fs::remove_dir_all(&dir).ok();
     }
 }

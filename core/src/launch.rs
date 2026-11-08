@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -50,6 +51,10 @@ pub struct LaunchSpec {
     pub engine_sig: String,
     #[serde(default)]
     pub mods: Vec<String>,
+    #[serde(default, rename = "log_dir")]
+    pub log_dir: String,
+    #[serde(default, rename = "allow_unsigned")]
+    pub allow_unsigned: bool,
 }
 
 pub fn client_path(install_dir: &str) -> PathBuf {
@@ -157,6 +162,34 @@ pub fn loader_path(loader_dir: &str) -> PathBuf {
     }
 }
 
+fn open_logs(log_dir: &str, name: &str) -> Option<fs::File> {
+    let dir = PathBuf::from(log_dir.trim());
+    if dir.as_os_str().is_empty() {
+        return None;
+    }
+    fs::create_dir_all(&dir).ok()?;
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(name))
+        .ok()
+}
+
+fn apply_streams(command: &mut Command, log_dir: &str) {
+    let stdout = open_logs(log_dir, "client.stdout.log");
+    let stderr = open_logs(log_dir, "client.stderr.log");
+    if let Some(file) = stdout {
+        command.stdout(Stdio::from(file));
+    } else {
+        command.stdout(Stdio::null());
+    }
+    if let Some(file) = stderr {
+        command.stderr(Stdio::from(file));
+    } else {
+        command.stderr(Stdio::null());
+    }
+}
+
 pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
     if spec.mode.trim().eq_ignore_ascii_case("acz") {
         return launch_loader(spec);
@@ -166,10 +199,8 @@ pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
         return Err(format!("клиент не найден: {}", path.display()));
     }
     let mut command = Command::new(&path);
-    command
-        .args(build_args(spec))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    command.args(build_args(spec));
+    apply_streams(&mut command, &spec.log_dir);
     for (key, value) in build_env(spec) {
         command.env(key, value);
     }
@@ -207,10 +238,12 @@ fn launch_loader(spec: &LaunchSpec) -> Result<u32, String> {
         .arg(&engine_zip)
         .arg(sig)
         .arg(&pubkey)
-        .args(build_args(spec))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .args(build_args(spec));
+    apply_streams(&mut command, &spec.log_dir);
     command.env("SS14_LOADER_OVERLAY_ZIP", &content_zip);
+    if spec.allow_unsigned {
+        command.env("SS14_DISABLE_SIGNING", "true");
+    }
     for (key, value) in build_env(spec) {
         command.env(key, value);
     }

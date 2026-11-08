@@ -10,6 +10,16 @@ pub struct FavoriteEntry {
     pub name: String,
     #[serde(default)]
     pub url: String,
+    #[serde(default)]
+    pub raised: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PrivacyAccept {
+    #[serde(default)]
+    pub identifier: String,
+    #[serde(default)]
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -31,11 +41,31 @@ pub struct Config {
     #[serde(default)]
     pub hide_empty: bool,
     #[serde(default)]
+    pub hide_full: bool,
+    #[serde(default)]
     pub fullscreen: bool,
     #[serde(default)]
     pub vsync: bool,
     #[serde(default)]
     pub mods_enabled: Vec<String>,
+    #[serde(default)]
+    pub hubs: Vec<String>,
+    #[serde(default)]
+    pub guest_username: String,
+    #[serde(default)]
+    pub username_override: String,
+    #[serde(default)]
+    pub engine_override: String,
+    #[serde(default)]
+    pub client_logs: bool,
+    #[serde(default)]
+    pub filter_tags: Vec<String>,
+    #[serde(default)]
+    pub filter_min_players: i64,
+    #[serde(default)]
+    pub filter_max_players: i64,
+    #[serde(default)]
+    pub accepted_privacy: Vec<PrivacyAccept>,
 }
 
 pub fn config_dir() -> Option<PathBuf> {
@@ -48,6 +78,10 @@ pub fn config_file() -> Option<PathBuf> {
 
 pub fn mods_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("mods"))
+}
+
+pub fn logs_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("logs"))
 }
 
 pub fn load_from(path: &PathBuf) -> Result<Config, String> {
@@ -77,5 +111,57 @@ pub fn save(config: &Config) -> Result<(), String> {
     match config_file() {
         Some(path) => save_to(&path, config),
         None => Err("каталог конфигурации не найден".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrips_new_fields() {
+        let config = Config {
+            hubs: vec!["https://hub.example.com/".into()],
+            guest_username: "Гость".into(),
+            username_override: "mel0k1".into(),
+            engine_override: "/opt/engines/custom.zip".into(),
+            client_logs: true,
+            hide_full: true,
+            filter_tags: vec!["lang:ru".into(), "18+".into()],
+            filter_min_players: 2,
+            filter_max_players: 90,
+            accepted_privacy: vec![PrivacyAccept {
+                identifier: "corvax".into(),
+                version: "3".into(),
+            }],
+            favorites: vec![FavoriteEntry {
+                name: "Wormix".into(),
+                url: "ss14://wormix14.site".into(),
+                raised: 42,
+            }],
+            ..Config::default()
+        };
+        let raw = serde_json::to_string(&config).unwrap();
+        let parsed: Config = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed.hubs, config.hubs);
+        assert_eq!(parsed.guest_username, "Гость");
+        assert_eq!(parsed.username_override, "mel0k1");
+        assert!(parsed.client_logs);
+        assert!(parsed.hide_full);
+        assert_eq!(parsed.filter_tags, config.filter_tags);
+        assert_eq!(parsed.filter_min_players, 2);
+        assert_eq!(parsed.filter_max_players, 90);
+        assert_eq!(parsed.accepted_privacy.len(), 1);
+        assert_eq!(parsed.favorites[0].raised, 42);
+    }
+
+    #[test]
+    fn reads_old_config() {
+        let raw = r#"{"install_dir":"/opt/ss14","theme":"dark","favorites":[{"name":"A","url":"ss14://a.example"}]}"#;
+        let parsed: Config = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.install_dir, "/opt/ss14");
+        assert_eq!(parsed.favorites[0].raised, 0);
+        assert!(parsed.hubs.is_empty());
+        assert!(!parsed.client_logs);
     }
 }

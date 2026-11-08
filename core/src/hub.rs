@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::collections::HashSet;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub const DEFAULT_HUB_URL: &str = "https://hub.spacestation14.com/";
 
@@ -25,6 +27,18 @@ pub struct HubServer {
     pub round_id: i64,
     #[serde(default)]
     pub status_message: String,
+    #[serde(default)]
+    pub hub: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ServerPing {
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "ms")]
+    pub ping_ms: u64,
+    #[serde(rename = "online")]
+    pub online: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +96,7 @@ impl From<HubEntry> for HubServer {
             run_level: status.run_level,
             round_id: status.round_id,
             status_message: status.status_message,
+            hub: String::new(),
         }
     }
 }
@@ -100,7 +115,7 @@ pub fn hub_url(value: &str) -> String {
     }
 }
 
-pub fn fetch_servers(hub: &str) -> Result<Vec<HubServer>, String> {
+fn fetch_hub_servers(hub: &str) -> Result<Vec<HubServer>, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
@@ -117,6 +132,118 @@ pub fn fetch_servers(hub: &str) -> Result<Vec<HubServer>, String> {
         .json()
         .map_err(|error| format!("не удалось разобрать список серверов: {error}"))?;
     Ok(entries.into_iter().map(HubServer::from).collect())
+}
+
+pub fn fetch_servers(hub: &str) -> Result<Vec<HubServer>, String> {
+    fetch_hub_servers(hub)
+}
+
+pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
+    let mut jobs: Vec<(String, String)> = vec![(DEFAULT_HUB_URL.to_string(), String::new())];
+    for hub in hubs {
+        let url = hub_url(hub);
+        if url == DEFAULT_HUB_URL || jobs.iter().any(|(existing, _)| *existing == url) {
+            continue;
+        }
+        jobs.push((url.clone(), url));
+    }
+    let results: Vec<Result<Vec<HubServer>, String>> = thread::scope(|scope| {
+        let handles: Vec<_> = jobs
+            .iter()
+            .map(|(url, label)| {
+                let url = url.clone();
+                let label = label.clone();
+                scope.spawn(move || {
+                    fetch_hub_servers(&url).map(|mut servers| {
+                        for server in servers.iter_mut() {
+                            if !label.is_empty() {
+                                server.hub = label.clone();
+                            }
+                        }
+                        servers
+                    })
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect()
+    });
+    let mut merged: Vec<HubServer> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut errors: Vec<String> = Vec::new();
+    for result in results {
+        match result {
+            Ok(servers) => {
+                for server in servers {
+                    let key = server.address.trim().to_ascii_lowercase();
+                    if key.is_empty() || !seen.insert(key) {
+                        continue;
+                    }
+                    merged.push(server);
+                }
+            }
+            Err(message) => errors.push(message),
+        }
+    }
+    if merged.is_empty() {
+        if errors.is_empty() {
+            return Ok(merged);
+        }
+        return Err(errors.join("; "));
+    }
+    Ok(merged)
+}
+
+fn ping_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|error| error.to_string())
+}
+
+pub fn ping_server(url: &str) -> ServerPing {
+    let address = normalize_server_address(url);
+    let endpoint = format!("{}/status", address.trim_end_matches('/'));
+    let client = match ping_client() {
+        Ok(client) => client,
+        Err(_) => {
+            return ServerPing {
+                url: url.to_string(),
+                ping_ms: 0,
+                online: false,
+            }
+        }
+    };
+    let started = Instant::now();
+    let online = client
+        .get(endpoint)
+        .send()
+        .map(|response| response.status().is_success())
+        .unwrap_or(false);
+    ServerPing {
+        url: url.to_string(),
+        ping_ms: started.elapsed().as_millis() as u64,
+        online,
+    }
+}
+
+pub fn ping_servers(urls: &[String]) -> Vec<ServerPing> {
+    thread::scope(|scope| {
+        let handles: Vec<_> = urls
+            .iter()
+            .map(|url| {
+                let url = url.clone();
+                scope.spawn(move || ping_server(&url))
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect()
+    })
 }
 
 #[cfg(test)]
@@ -160,6 +287,22 @@ mod tests {
     #[test]
     fn hub_url_appends_slash() {
         assert_eq!(hub_url(""), DEFAULT_HUB_URL);
-        assert_eq!(hub_url("https://hub.example.com"), "https://hub.example.com/");
+        assert_eq!(
+            hub_url("https://hub.example.com"),
+            "https://hub.example.com/"
+        );
+    }
+
+    #[test]
+    fn ping_payload_serializes() {
+        let ping = ServerPing {
+            url: "ss14://wormix14.site".into(),
+            ping_ms: 42,
+            online: true,
+        };
+        let raw = serde_json::to_string(&ping).unwrap();
+        assert!(raw.contains("\"url\":\"ss14://wormix14.site\""));
+        assert!(raw.contains("\"ms\":42"));
+        assert!(raw.contains("\"online\":true"));
     }
 }

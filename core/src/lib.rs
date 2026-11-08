@@ -7,6 +7,7 @@ pub mod engine;
 pub mod hub;
 pub mod install;
 mod launch;
+pub mod remote;
 pub mod status;
 pub mod sys;
 
@@ -337,16 +338,76 @@ pub unsafe extern "C" fn illusio_logout(raw: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn illusio_fetch_servers(url: *const c_char) -> *mut c_char {
-    guarded(|| match hub::fetch_servers(&read_ptr(url)) {
-        Ok(servers) => serde_json::json!({
+pub unsafe extern "C" fn illusio_fetch_servers(raw: *const c_char) -> *mut c_char {
+    guarded(|| {
+        let payload = read_ptr(raw);
+        let trimmed = payload.trim();
+        let result = if trimmed.starts_with('[') {
+            let hubs: Vec<String> = serde_json::from_str(trimmed).unwrap_or_default();
+            hub::fetch_servers_multi(&hubs)
+        } else {
+            hub::fetch_servers_multi(&[trimmed.to_string()])
+        };
+        match result {
+            Ok(servers) => serde_json::json!({
+                "ok": true,
+                "servers": servers,
+            })
+            .to_string(),
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message,
+            })
+            .to_string(),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_ping_servers(raw: *const c_char) -> *mut c_char {
+    guarded(|| {
+        let payload = read_ptr(raw);
+        let urls: Vec<String> = serde_json::from_str(payload.trim()).unwrap_or_default();
+        let pings = hub::ping_servers(&urls);
+        serde_json::json!({
             "ok": true,
-            "servers": servers,
+            "pings": pings,
+        })
+        .to_string()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_check_update(current: *const c_char) -> *mut c_char {
+    guarded(|| match remote::fetch_update_check(&read_ptr(current)) {
+        Ok(check) => serde_json::json!({
+            "ok": true,
+            "blocked": check.blocked,
+            "min_version": check.min_version,
+            "reason": check.reason,
         })
         .to_string(),
-        Err(message) => serde_json::json!({
+        Err(_) => serde_json::json!({
+            "ok": true,
+            "blocked": false,
+            "min_version": "",
+            "reason": "",
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_logs_dir() -> *mut c_char {
+    guarded(|| match config::logs_dir() {
+        Some(path) => serde_json::json!({
+            "ok": true,
+            "path": path.display().to_string(),
+        })
+        .to_string(),
+        None => serde_json::json!({
             "ok": false,
-            "error": message,
+            "error": "каталог конфигурации не найден",
         })
         .to_string(),
     })
