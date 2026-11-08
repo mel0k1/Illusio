@@ -277,9 +277,14 @@ InputDecoration illusioInput(String label,
   );
 }
 
-SnackBar illusioSnackBar(String message) {
+SnackBar illusioSnackBar(
+  String message, {
+  bool error = false,
+  Color? errorColor,
+}) {
   return SnackBar(
     behavior: SnackBarBehavior.floating,
     content: Text(message),
+    backgroundColor: error ? errorColor : null,
   );
 }

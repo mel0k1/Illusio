@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/strings.dart';
 import '../../models/hub_server.dart';
 import '../../state/app_controller.dart';
 import '../theme.dart';
@@ -36,20 +37,23 @@ class _ModsScreenState extends State<ModsScreen> {
       listenable: widget.controller,
       builder: (context, _) {
         final controller = widget.controller;
-        final mods = controller.mods;
-        final enabled = controller.modsEnabled;
+        final s = S.of(context);
+        final zips = controller.mods.where((mod) => !mod.isDll).toList();
+        final dlls = controller.mods.where((mod) => mod.isDll).toList();
+        final enabled = controller.modsEnabled.length +
+            controller.dllModsEnabled.length;
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Моды', style: theme.textTheme.headlineLarge),
+                Text(s.modsTitle, style: theme.textTheme.headlineLarge),
                 const SizedBox(height: 4),
                 Text(
-                  mods.isEmpty
-                      ? 'ZIP-моды из каталога модов'
-                      : '${mods.length} файлов · ${enabled.length} включено',
+                  controller.mods.isEmpty
+                      ? s.modsSubtitle
+                      : s.modsCountLine(controller.mods.length, enabled),
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
@@ -70,13 +74,19 @@ class _ModsScreenState extends State<ModsScreen> {
                     children: [
                       Icon(Icons.extension, size: 20, color: scheme.primary),
                       const SizedBox(width: 8),
-                      Text('Как это работает',
+                      Text(s.howItWorks,
                           style: theme.textTheme.titleMedium),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Положите ZIP-архивы в каталог модов и включите нужные. Они монтируются в клиент как оверлей при запуске. Отключение вернёт оригинальные ресурсы.',
+                    s.zipHowText,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.dllHowText,
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
@@ -94,21 +104,20 @@ class _ModsScreenState extends State<ModsScreen> {
                         onPressed: controller.modsPath.isEmpty
                             ? null
                             : () async {
-                                final messenger = ScaffoldMessenger.of(context);
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
                                 await controller.openModsDir();
                                 messenger.showSnackBar(
-                                  illusioSnackBar(
-                                    'Каталог открыт — положите ZIP-архивы туда',
-                                  ),
+                                  illusioSnackBar(s.folderOpened),
                                 );
                               },
                         icon: const Icon(Icons.folder_open, size: 20),
-                        label: const Text('Открыть папку'),
+                        label: Text(s.openFolder),
                       ),
                       OutlinedButton.icon(
                         onPressed: () => controller.loadMods(),
                         icon: const Icon(Icons.refresh, size: 20),
-                        label: const Text('Обновить'),
+                        label: Text(s.refresh),
                       ),
                     ],
                   ),
@@ -116,7 +125,7 @@ class _ModsScreenState extends State<ModsScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            if (mods.isEmpty)
+            if (controller.mods.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
@@ -129,10 +138,11 @@ class _ModsScreenState extends State<ModsScreen> {
                     Icon(Icons.category_outlined,
                         size: 44, color: scheme.onSurfaceVariant),
                     const SizedBox(height: 16),
-                    Text('Модов пока нет', style: theme.textTheme.titleMedium),
+                    Text(s.modsEmptyTitle,
+                        style: theme.textTheme.titleMedium),
                     const SizedBox(height: 6),
                     Text(
-                      'Скачайте ZIP-мод, откройте папку модов и положите файл туда, затем нажмите «Обновить».',
+                      s.modsEmptyHint,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -141,18 +151,76 @@ class _ModsScreenState extends State<ModsScreen> {
                   ],
                 ),
               )
-            else
-              for (final mod in mods) ...[
-                _ModTile(
-                  mod: mod,
-                  enabled: enabled.contains(mod.fileName),
-                  controller: controller,
-                ),
+            else ...[
+              if (zips.isNotEmpty) ...[
+                _KindLabel(s.zipSection),
                 const SizedBox(height: 10),
+                for (final mod in zips) ...[
+                  _ModTile(
+                    mod: mod,
+                    title: mod.fileName,
+                    subtitle:
+                        '${mod.sizeLabel(s)} · ${controller.modsEnabled.contains(mod.fileName) ? s.modEnabled : s.modDisabled}',
+                    enabled: controller.modsEnabled.contains(mod.fileName),
+                    controller: controller,
+                    onToggle: () => controller.toggleMod(mod.fileName),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ],
+              if (dlls.isNotEmpty) ...[
+                _KindLabel(s.dllSection),
+                const SizedBox(height: 10),
+                for (final mod in dlls) ...[
+                  _ModTile(
+                    mod: mod,
+                    title: mod.name.isEmpty ? mod.fileName : mod.name,
+                    subtitle: _dllSubtitle(
+                      s,
+                      mod,
+                      controller.dllModsEnabled.contains(mod.path),
+                    ),
+                    enabled: controller.dllModsEnabled.contains(mod.path),
+                    controller: controller,
+                    onToggle: () => controller.toggleDllMod(mod.path),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+            ],
           ],
         );
       },
+    );
+  }
+
+  String _dllSubtitle(S s, ModEntry mod, bool enabled) {
+    final parts = <String?>[];
+    if (mod.version.isNotEmpty) {
+      parts.add('v${mod.version}');
+    }
+    parts.add(mod.sizeLabel(s));
+    parts.add(mod.name.isEmpty ? s.dllNoMarker : null);
+    parts.add(enabled ? s.modEnabled : s.modDisabled);
+    return parts
+        .where((value) => value != null && value.isNotEmpty)
+        .join(' · ');
+  }
+}
+
+class _KindLabel extends StatelessWidget {
+  const _KindLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: Theme.of(context).colorScheme.primary,
+            letterSpacing: 0.4,
+          ),
     );
   }
 }
@@ -160,13 +228,19 @@ class _ModsScreenState extends State<ModsScreen> {
 class _ModTile extends StatelessWidget {
   const _ModTile({
     required this.mod,
+    required this.title,
+    required this.subtitle,
     required this.enabled,
     required this.controller,
+    required this.onToggle,
   });
 
   final ModEntry mod;
+  final String title;
+  final String subtitle;
   final bool enabled;
   final AppController controller;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +269,9 @@ class _ModTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              Icons.inventory_2_outlined,
+              mod.isDll
+                  ? Icons.memory_outlined
+                  : Icons.inventory_2_outlined,
               size: 20,
               color: enabled
                   ? scheme.onSecondaryContainer
@@ -208,12 +284,12 @@ class _ModTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  mod.fileName,
+                  title,
                   style: theme.textTheme.titleMedium,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  '${mod.sizeLabel} · ${enabled ? 'включён' : 'выключен'}',
+                  subtitle,
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
@@ -222,7 +298,7 @@ class _ModTile extends StatelessWidget {
           ),
           Switch(
             value: enabled,
-            onChanged: (_) => controller.toggleMod(mod.fileName),
+            onChanged: (_) => onToggle(),
           ),
         ],
       ),

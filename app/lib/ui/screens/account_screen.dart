@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../ffi/bindings.dart';
+import '../../l10n/strings.dart';
 import '../../models/login_info.dart';
 import '../../state/app_controller.dart';
 import '../theme.dart';
@@ -33,9 +34,10 @@ class _AccountSheetState extends State<AccountSheet> {
   Future<void> _submit() async {
     final username = _username.text.trim();
     final password = _password.text;
+    final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
     if (username.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(illusioSnackBar('Введите логин и пароль'));
+      messenger.showSnackBar(illusioSnackBar(s.enterCredentials));
       return;
     }
     final result = await widget.controller.authenticate(
@@ -55,16 +57,17 @@ class _AccountSheetState extends State<AccountSheet> {
       setState(() => _needsTfa = true);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      illusioSnackBar(result['error']?.toString() ?? 'вход не удался'),
+    messenger.showSnackBar(
+      illusioSnackBar(result['error']?.toString() ?? s.loginFailed),
     );
   }
 
   Future<void> _openRegister() async {
     final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
     await widget.controller.openUrl(Core.registerUrl);
     messenger.showSnackBar(
-      illusioSnackBar('Открываем страницу регистрации'),
+      illusioSnackBar(s.openRegisterPage),
     );
   }
 
@@ -75,18 +78,20 @@ class _AccountSheetState extends State<AccountSheet> {
   Future<void> _loginGuest() async {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
     await widget.controller.loginAsGuest();
     navigator.pop();
-    messenger.showSnackBar(illusioSnackBar('Вошли как гость'));
+    messenger.showSnackBar(illusioSnackBar(s.guestSignedIn));
   }
 
   Future<void> _switch(LoginInfo account) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final s = S.of(context);
     await widget.controller.switchAccount(account);
     navigator.pop();
     messenger.showSnackBar(
-      illusioSnackBar('Аккаунт: ${account.username}'),
+      illusioSnackBar(s.accountSwitched(account.username)),
     );
   }
 
@@ -148,7 +153,7 @@ class _AccountSheetState extends State<AccountSheet> {
               if (current.expireTime.isNotEmpty)
                 Center(
                   child: Text(
-                    'Сессия до ${_formatExpiry(current.expireTime)}',
+                    S.of(context).sessionUntil(_formatExpiry(current.expireTime)),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -157,7 +162,7 @@ class _AccountSheetState extends State<AccountSheet> {
               const SizedBox(height: 20),
             ],
             if (others.isNotEmpty) ...[
-              _sectionTitle(context, 'Сменить аккаунт'),
+              _sectionTitle(context, S.of(context).switchAccount),
               const SizedBox(height: 8),
               for (final account in others)
                 _AccountTile(
@@ -169,19 +174,19 @@ class _AccountSheetState extends State<AccountSheet> {
             FilledButton.tonalIcon(
               onPressed: () => setState(() => _loginMode = true),
               icon: const Icon(Icons.person_add_alt_1, size: 20),
-              label: const Text('Добавить аккаунт'),
+              label: Text(S.of(context).addAccount),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _loginGuest,
               icon: const Icon(Icons.person_off_outlined, size: 20),
-              label: const Text('Войти как гость'),
+              label: Text(S.of(context).loginAsGuest),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _openRegister,
               icon: const Icon(Icons.open_in_new, size: 20),
-              label: const Text('Создать аккаунт'),
+              label: Text(S.of(context).createAccount),
             ),
             const SizedBox(height: 10),
             if (current != null)
@@ -189,17 +194,18 @@ class _AccountSheetState extends State<AccountSheet> {
                 onPressed: () async {
                   final navigator = Navigator.of(context);
                   final messenger = ScaffoldMessenger.of(context);
+                  final s = S.of(context);
                   await widget.controller.logout();
                   if (!mounted) {
                     return;
                   }
                   navigator.pop();
                   messenger.showSnackBar(
-                    illusioSnackBar('Вы вышли из аккаунта'),
+                    illusioSnackBar(s.loggedOut),
                   );
                 },
                 icon: const Icon(Icons.logout, size: 20),
-                label: const Text('Выйти'),
+                label: Text(S.of(context).logout),
                 style: TextButton.styleFrom(foregroundColor: scheme.error),
               ),
           ],
@@ -219,13 +225,13 @@ class _AccountSheetState extends State<AccountSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Вход в аккаунт SS14',
+              S.of(context).loginTitle,
               style: theme.textTheme.headlineSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             Text(
-              'Тот же аккаунт, что и на сайте spacestation14.io',
+              S.of(context).loginHint,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: scheme.onSurfaceVariant),
               textAlign: TextAlign.center,
@@ -236,7 +242,7 @@ class _AccountSheetState extends State<AccountSheet> {
               autofillHints: const [AutofillHints.username],
               enableSuggestions: false,
               autocorrect: false,
-              decoration: illusioInput('Логин',
+              decoration: illusioInput(S.of(context).username,
                   prefixIcon: const Icon(Icons.person_outline, size: 20)),
             ),
             const SizedBox(height: 12),
@@ -246,7 +252,7 @@ class _AccountSheetState extends State<AccountSheet> {
               autofillHints: const [AutofillHints.password],
               onSubmitted: (_) => _submit(),
               decoration: illusioInput(
-                'Пароль',
+                S.of(context).password,
                 prefixIcon: const Icon(Icons.lock_outline, size: 20),
                 suffix: IconButton(
                   onPressed: () => setState(() => _obscured = !_obscured),
@@ -266,7 +272,7 @@ class _AccountSheetState extends State<AccountSheet> {
                 keyboardType: TextInputType.number,
                 onSubmitted: (_) => _submit(),
                 decoration: illusioInput(
-                  'Код двухфакторной аутентификации',
+                  S.of(context).tfaCode,
                   prefixIcon: const Icon(Icons.shield_outlined, size: 20),
                 ),
               ),
@@ -289,12 +295,12 @@ class _AccountSheetState extends State<AccountSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Войти'),
+                  : Text(S.of(context).login),
             ),
             const SizedBox(height: 10),
             TextButton(
               onPressed: () => setState(() => _loginMode = false),
-              child: const Text('Назад'),
+              child: Text(S.of(context).back),
             ),
             const SizedBox(height: 4),
             Row(
@@ -302,17 +308,17 @@ class _AccountSheetState extends State<AccountSheet> {
               children: [
                 TextButton(
                   onPressed: () => _openLink(Core.forgotPasswordUrl),
-                  child: const Text('Забыли пароль?'),
+                  child: Text(S.of(context).forgotPassword),
                 ),
                 TextButton(
                   onPressed: () => _openLink(Core.resendConfirmationUrl),
-                  child: const Text('Повторить письмо'),
+                  child: Text(S.of(context).resendEmail),
                 ),
               ],
             ),
             TextButton(
               onPressed: () => _openLink(Core.manageAccountUrl),
-              child: const Text('Управление аккаунтом на сайте'),
+              child: Text(S.of(context).manageOnSite),
             ),
           ],
         ),
@@ -359,7 +365,7 @@ class _AccountTile extends StatelessWidget {
       title: Text(account.username,
           style: Theme.of(context).textTheme.titleMedium),
       subtitle: Text(
-        'сохранённый аккаунт',
+        S.of(context).savedAccount,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),

@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/strings.dart';
 import '../../models/server.dart';
 import '../../state/app_controller.dart';
 import '../theme.dart';
@@ -26,12 +27,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openAddDialog() async {
+    final s = S.of(context);
     final nameController = TextEditingController();
     final urlController = TextEditingController();
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Добавить сервер'),
+        title: Text(s.addServer),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -39,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: urlController,
               autofocus: true,
               decoration: illusioInput(
-                'Адрес сервера',
+                s.serverAddress,
                 hint: 'ss14://example.com',
               ),
             ),
@@ -47,8 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
             TextField(
               controller: nameController,
               decoration: illusioInput(
-                'Название',
-                hint: 'как отобразить в избранном',
+                s.serverName,
+                hint: s.serverNameHint,
               ),
             ),
           ],
@@ -56,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Отмена'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -70,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
               Navigator.of(dialogContext).pop();
             },
-            child: const Text('Добавить'),
+            child: Text(s.add),
           ),
         ],
       ),
@@ -80,31 +82,32 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openEditDialog(GameServer server) async {
+    final s = S.of(context);
     final nameController = TextEditingController(text: server.name);
     final urlController = TextEditingController(text: server.url);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Изменить сервер'),
+        title: Text(s.editServer),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
               autofocus: true,
-              decoration: illusioInput('Название'),
+              decoration: illusioInput(s.serverName),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: urlController,
-              decoration: illusioInput('Адрес сервера'),
+              decoration: illusioInput(s.serverAddress),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Отмена'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -115,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
               Navigator.of(dialogContext).pop();
             },
-            child: const Text('Сохранить'),
+            child: Text(s.save),
           ),
         ],
       ),
@@ -126,7 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _pickBundle() async {
     final messenger = ScaffoldMessenger.of(context);
-    const type = XTypeGroup(label: 'реплеи', extensions: ['zip']);
+    final s = S.of(context);
+    final type = XTypeGroup(label: s.replayTypeLabel, extensions: ['zip']);
     final files = await openFiles(acceptedTypeGroups: [type]);
     if (files.isEmpty) {
       return;
@@ -134,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final path = files.first.path;
     if (!path.toLowerCase().endsWith('.zip')) {
       messenger.showSnackBar(
-        illusioSnackBar('нужен zip-архив content bundle'),
+        illusioSnackBar(s.needZipBundle),
       );
       return;
     }
@@ -158,13 +162,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
+        final s = S.of(context);
         final favorites = widget.controller.sortedFavorites;
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
             _PageTitle(
-              title: 'Главная',
-              subtitle: 'избранные сервера и прямое подключение',
+              title: s.homeTitle,
+              subtitle: s.homeSubtitle,
             ),
             const SizedBox(height: 20),
             _DirectConnectCard(
@@ -178,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _pickBundle,
                     icon: const Icon(Icons.movie_outlined, size: 20),
-                    label: const Text('Запустить реплей'),
+                    label: Text(s.launchReplay),
                   ),
                 ),
               ],
@@ -186,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 28),
             Row(
               children: [
-                Text('Избранное',
+                Text(s.favorites,
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(width: 8),
                 Text(
@@ -199,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 FilledButton.tonalIcon(
                   onPressed: _openAddDialog,
                   icon: const Icon(Icons.add, size: 20),
-                  label: const Text('Добавить'),
+                  label: Text(s.add),
                 ),
               ],
             ),
@@ -258,6 +263,7 @@ class _DirectConnectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final s = S.of(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -273,14 +279,14 @@ class _DirectConnectCard extends StatelessWidget {
               Icon(Icons.bolt, size: 20, color: scheme.primary),
               const SizedBox(width: 8),
               Text(
-                'Прямое подключение',
+                s.directTitle,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Вставьте адрес сервера — клиент скачается сам при первом подключении.',
+            s.directHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -295,7 +301,7 @@ class _DirectConnectCard extends StatelessWidget {
                     controller: controller,
                     onSubmitted: (_) => onConnect(),
                     decoration: illusioInput(
-                      'Адрес',
+                      s.address,
                       hint: 'ss14://play.example.com',
                       prefixIcon: const Icon(Icons.link, size: 20),
                     ),
@@ -304,7 +310,7 @@ class _DirectConnectCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 FilledButton(
                   onPressed: value.text.trim().isEmpty ? null : onConnect,
-                  child: const Text('Играть'),
+                  child: Text(S.of(context).play),
                 ),
               ],
             ),
@@ -334,11 +340,11 @@ class _EmptyFavorites extends StatelessWidget {
         children: [
           const IllusioLogo(size: 72),
           const SizedBox(height: 16),
-          Text('Здесь пока пусто',
+          Text(S.of(context).emptyFavoritesTitle,
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
-            'Добавьте первый сервер или найдите его на вкладке «Сервера».',
+            S.of(context).emptyFavoritesHint,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -405,19 +411,19 @@ class _FavoriteTile extends StatelessWidget {
                 onPressed: () => controller.raiseFavorite(server.url),
                 icon: const Icon(Icons.vertical_align_top, size: 20),
                 color: scheme.onSurfaceVariant,
-                tooltip: 'Поднять наверх',
+                tooltip: S.of(context).raiseTop,
               ),
               IconButton(
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined, size: 20),
                 color: scheme.onSurfaceVariant,
-                tooltip: 'Изменить',
+                tooltip: S.of(context).edit,
               ),
               IconButton(
                 onPressed: () => controller.removeFavorite(server.url),
                 icon: const Icon(Icons.star, size: 20),
                 color: scheme.primary,
-                tooltip: 'Убрать из избранного',
+                tooltip: S.of(context).removeFavorite,
               ),
               connecting
                   ? const Padding(
@@ -430,7 +436,7 @@ class _FavoriteTile extends StatelessWidget {
                     )
                   : FilledButton.tonal(
                       onPressed: onConnect,
-                      child: const Text('Играть'),
+                      child: Text(S.of(context).play),
                     ),
             ],
           ),

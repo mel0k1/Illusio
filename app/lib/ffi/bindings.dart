@@ -87,6 +87,9 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _checkUpdate = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_check_update')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _proxyProbe = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_proxy_probe')
+      .asFunction();
   static final Pointer<Utf8> Function() _logsDir = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_logs_dir')
       .asFunction();
@@ -153,6 +156,9 @@ class Core {
 
   static Map<String, dynamic> logsDir() => _run(_logsDir);
 
+  static Map<String, dynamic> proxyProbe(String json) =>
+      _withString(json, _proxyProbe);
+
   static const String registerUrl =
       'https://account.spacestation14.com/Register';
   static const String forgotPasswordUrl =
@@ -178,7 +184,7 @@ class Core {
     try {
       final pointer = call();
       if (pointer == nullptr) {
-        return {'ok': false, 'error': 'ядро вернуло пустой ответ'};
+        return {'ok': false, 'error': 'core empty reply'};
       }
       final raw = pointer.toDartString();
       _free(pointer);
@@ -190,7 +196,7 @@ class Core {
 
   static Map<String, dynamic> _decode(String raw) {
     final decoded = _tryDecode(raw);
-    return decoded ?? {'ok': false, 'error': 'ядро вернуло некорректный ответ'};
+    return decoded ?? {'ok': false, 'error': 'core invalid reply'};
   }
 
   static Map<String, dynamic>? _tryDecode(String raw) {

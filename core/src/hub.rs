@@ -116,7 +116,7 @@ pub fn hub_url(value: &str) -> String {
 }
 
 fn fetch_hub_servers(hub: &str) -> Result<Vec<HubServer>, String> {
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| error.to_string())?;
@@ -197,7 +197,7 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
 }
 
 fn ping_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(Duration::from_secs(5))
         .connect_timeout(Duration::from_secs(5))
         .build()

@@ -36,6 +36,15 @@ fn config_roundtrip() {
             identifier: "corvax".into(),
             version: "1".into(),
         }],
+        language: "ru".into(),
+        proxy_enabled: false,
+        proxy_host: String::new(),
+        proxy_port: 0,
+        proxy_username: String::new(),
+        proxy_password: String::new(),
+        proxy_udp_relay: false,
+        proxy_apply_to_game: false,
+        dll_mods_enabled: Vec::new(),
     };
     save_to(&path, &config).expect("save failed");
     let loaded = load_from(&path).expect("load failed");

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../ffi/bindings.dart';
+import '../../l10n/strings.dart';
 import '../../state/app_controller.dart';
 import '../../version.dart';
 import '../theme.dart';
@@ -21,6 +22,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _guest = TextEditingController();
   final TextEditingController _override = TextEditingController();
   final TextEditingController _engineOverride = TextEditingController();
+  final TextEditingController _proxyHost = TextEditingController();
+  final TextEditingController _proxyPort = TextEditingController();
+  final TextEditingController _proxyUser = TextEditingController();
+  final TextEditingController _proxyPass = TextEditingController();
+  bool _proxyPassObscured = true;
+  bool _proxyBusy = false;
+  String _proxyResult = '';
+  Color _proxyResultColor = Colors.transparent;
   String _configPath = '';
   bool _pathsLoaded = false;
 
@@ -35,19 +44,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) {
       return;
     }
+    final controller = widget.controller;
     setState(() {
-      _installDir.text = widget.controller.installDir;
-      _launchArgs.text = widget.controller.launchArgs.join(' ');
-      _guest.text = widget.controller.guestUsername;
-      _override.text = widget.controller.usernameOverride;
-      _engineOverride.text = widget.controller.engineOverride;
+      _installDir.text = controller.installDir;
+      _launchArgs.text = controller.launchArgs.join(' ');
+      _guest.text = controller.guestUsername;
+      _override.text = controller.usernameOverride;
+      _engineOverride.text = controller.engineOverride;
+      _proxyHost.text = controller.proxyHost;
+      _proxyPort.text = controller.proxyPort > 0
+          ? controller.proxyPort.toString()
+          : '1080';
+      _proxyUser.text = controller.proxyUsername;
+      _proxyPass.text = controller.proxyPassword;
     });
-    final path = await widget.controller.configDirPath();
+    final path = await controller.configDirPath();
     if (!mounted) {
       return;
     }
     setState(() {
-      _configPath = path.isEmpty ? 'каталог не определён' : path;
+      _configPath = path.isEmpty ? S.of(context).pathUndefined : path;
       _pathsLoaded = true;
     });
   }
@@ -59,10 +75,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _guest.dispose();
     _override.dispose();
     _engineOverride.dispose();
+    _proxyHost.dispose();
+    _proxyPort.dispose();
+    _proxyUser.dispose();
+    _proxyPass.dispose();
     super.dispose();
   }
 
   Future<void> _saveClient() async {
+    final s = S.of(context);
     widget.controller.installDir = _installDir.text.trim();
     widget.controller.launchArgs = _launchArgs.text
         .trim()
@@ -75,45 +96,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     ScaffoldMessenger.of(context)
-        .showSnackBar(illusioSnackBar('Настройки клиента сохранены'));
+        .showSnackBar(illusioSnackBar(s.clientSaved));
+  }
+
+  Future<void> _saveProxy() async {
+    final s = S.of(context);
+    final port = int.tryParse(_proxyPort.text.trim()) ?? 1080;
+    widget.controller.setProxyFields(
+      host: _proxyHost.text.trim(),
+      port: port.clamp(1, 65535),
+      username: _proxyUser.text.trim(),
+      password: _proxyPass.text,
+    );
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(illusioSnackBar(s.proxySaved));
+  }
+
+  Future<void> _probeProxy() async {
+    final s = S.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final messenger = ScaffoldMessenger.of(context);
+    await _saveProxy();
+    setState(() {
+      _proxyBusy = true;
+      _proxyResult = s.proxyTesting;
+      _proxyResultColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    });
+    final controller = widget.controller;
+    final result = await controller.proxyProbe(controller.proxyUdpRelay);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _proxyBusy = false;
+      if (result['ok'] != true) {
+        _proxyResult = result['error']?.toString() ?? '';
+        _proxyResultColor = Theme.of(context).colorScheme.error;
+        return;
+      }
+      final rtt = (result['rtt_ms'] as num?)?.toInt() ?? 0;
+      final udpOk = result['udp_ok'] == true;
+      if (controller.proxyUdpRelay && !udpOk) {
+        _proxyResult = [
+          s.proxyOk(rtt),
+          s.proxyNoUdp,
+          result['udp_error']?.toString() ?? '',
+        ].where((value) => value.isNotEmpty).join(' · ');
+        _proxyResultColor = Theme.of(context).colorScheme.error;
+      } else {
+        _proxyResult =
+            controller.proxyUdpRelay ? s.proxyOkUdp(rtt) : s.proxyOk(rtt);
+        _proxyResultColor = Theme.of(context).colorScheme.primary;
+      }
+    });
+    messenger.showSnackBar(illusioSnackBar(
+      _proxyResult,
+      error: _proxyResultColor == scheme.error,
+      errorColor: scheme.error,
+    ));
   }
 
   Future<void> _clearCache() async {
+    final s = S.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final ok = await widget.controller.clearCache();
     messenger.showSnackBar(
-      illusioSnackBar(ok ? 'Кэш загрузок очищен' : 'Не удалось очистить кэш'),
+      illusioSnackBar(ok ? s.cacheCleared : s.cacheFailed),
     );
   }
 
   Future<void> _saveAccount() async {
+    final s = S.of(context);
     widget.controller.setGuestUsername(_guest.text.trim());
     widget.controller.setUsernameOverride(_override.text.trim());
     if (!mounted) {
       return;
     }
     ScaffoldMessenger.of(context)
-        .showSnackBar(illusioSnackBar('Настройки аккаунта сохранены'));
+        .showSnackBar(illusioSnackBar(s.accountSaved));
   }
 
   Future<void> _addHub() async {
+    final s = S.of(context);
     final urlController = TextEditingController();
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Добавить хаб'),
+        title: Text(s.addHub),
         content: TextField(
           controller: urlController,
           autofocus: true,
           decoration: illusioInput(
-            'Адрес хаба',
+            s.hubAddress,
             hint: 'https://hub.example.com',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Отмена'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -128,7 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
               Navigator.of(dialogContext).pop();
             },
-            child: const Text('Добавить'),
+            child: Text(s.add),
           ),
         ],
       ),
@@ -152,15 +236,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       listenable: widget.controller,
       builder: (context, _) {
         final controller = widget.controller;
+        final s = S.of(context);
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
             _PageTitle(
-              title: 'Настройки',
-              subtitle: 'внешний вид, поведение и клиент игры',
+              title: s.settingsTitle,
+              subtitle: s.settingsSubtitle,
             ),
             const SizedBox(height: 24),
-            _SectionLabel('Внешний вид'),
+            _SectionLabel(s.appearance),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -168,10 +253,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Тема', style: theme.textTheme.titleMedium),
+                  Text(s.theme, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text(
-                    'тёмная включена по умолчанию',
+                    s.themeHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 14),
+                  SegmentedButton<String>(
+                    segments: [
+                      ButtonSegment(
+                        value: 'dark',
+                        icon: const Icon(Icons.dark_mode_outlined, size: 18),
+                        label: Text(s.themeDark),
+                      ),
+                      ButtonSegment(
+                        value: 'light',
+                        icon: const Icon(Icons.light_mode_outlined, size: 18),
+                        label: Text(s.themeLight),
+                      ),
+                    ],
+                    selected: {controller.theme == 'light' ? 'light' : 'dark'},
+                    onSelectionChanged: (selection) =>
+                        controller.setTheme(selection.first),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(s.language, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.languageHint,
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
@@ -179,25 +290,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SegmentedButton<String>(
                     segments: const [
                       ButtonSegment(
-                        value: 'dark',
-                        icon: Icon(Icons.dark_mode_outlined, size: 18),
-                        label: Text('Тёмная'),
+                        value: 'ru',
+                        icon: Icon(Icons.language, size: 18),
+                        label: Text('RU'),
                       ),
                       ButtonSegment(
-                        value: 'light',
-                        icon: Icon(Icons.light_mode_outlined, size: 18),
-                        label: Text('Светлая'),
+                        value: 'en',
+                        icon: Icon(Icons.language, size: 18),
+                        label: Text('EN'),
                       ),
                     ],
-                    selected: {controller.theme == 'light' ? 'light' : 'dark'},
+                    selected: {
+                      controller.language == 'en' ? 'en' : 'ru'
+                    },
                     onSelectionChanged: (selection) =>
-                        controller.setTheme(selection.first),
+                        controller.setLanguage(selection.first),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            _SectionLabel('Игра'),
+            _SectionLabel(s.gameSection),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -205,14 +318,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 children: [
                   _SwitchRow(
-                    title: 'Полноэкранный режим',
+                    title: s.fullscreen,
                     subtitle: 'display.windowmode',
                     value: controller.fullscreen,
                     onChanged: controller.setFullscreen,
                   ),
                   const SizedBox(height: 8),
                   _SwitchRow(
-                    title: 'Вертикальная синхронизация',
+                    title: 'vsync',
                     subtitle: 'display.vsync',
                     value: controller.vsync,
                     onChanged: controller.setVsync,
@@ -221,7 +334,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            _SectionLabel('Список серверов'),
+            _SectionLabel(s.serverListSection),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -230,22 +343,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _SwitchRow(
-                    title: 'Скрывать пустые сервера',
-                    subtitle: 'сервера без игроков не отображаются',
+                    title: s.hideEmptyServers,
+                    subtitle: s.hideEmptyHint,
                     value: controller.hideEmpty,
                     onChanged: controller.setHideEmpty,
                   ),
                   const SizedBox(height: 8),
                   _SwitchRow(
-                    title: 'Скрывать полные сервера',
-                    subtitle: 'у них заняты все слоты',
+                    title: s.hideFullServers,
+                    subtitle: s.hideFullHint,
                     value: controller.hideFull,
                     onChanged: controller.setHideFull,
                   ),
                   const SizedBox(height: 14),
-                  Text('Хабы', style: theme.textTheme.titleMedium),
+                  Text(s.hubs, style: theme.textTheme.titleMedium),
                   Text(
-                    'основной хаб SS14 подключён всегда, ниже — дополнительные',
+                    s.hubsHint,
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
@@ -270,7 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   .toList(),
                             ),
                             icon: const Icon(Icons.close, size: 18),
-                            tooltip: 'Убрать хаб',
+                            tooltip: s.removeHub,
                           ),
                         ],
                       ),
@@ -278,13 +391,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   OutlinedButton.icon(
                     onPressed: _addHub,
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Добавить хаб'),
+                    label: Text(s.addHub),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            _SectionLabel('Клиент'),
+            _SectionLabel(s.clientSection),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -295,15 +408,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _installDir,
                     decoration: illusioInput(
-                      'Каталог для клиента',
-                      hint: 'по умолчанию — системный каталог данных',
+                      s.installDir,
+                      hint: s.installDirHint,
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _launchArgs,
                     decoration: illusioInput(
-                      'Аргументы запуска',
+                      s.launchArgs,
                       hint: '--profile server',
                     ),
                   ),
@@ -311,14 +424,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _engineOverride,
                     decoration: illusioInput(
-                      'Свой движок (zip)',
-                      hint: 'путь к архиву движка вместо CDN',
+                      s.engineOverride,
+                      hint: s.engineOverrideHint,
                     ),
                   ),
                   const SizedBox(height: 12),
                   _SwitchRow(
-                    title: 'Логи клиента',
-                    subtitle: 'stdout и stderr пишутся в каталог logs',
+                    title: s.clientLogs,
+                    subtitle: s.clientLogsHint,
                     value: controller.clientLogs,
                     onChanged: controller.setClientLogs,
                   ),
@@ -327,14 +440,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     alignment: Alignment.centerRight,
                     child: FilledButton.tonal(
                       onPressed: _saveClient,
-                      child: const Text('Сохранить'),
+                      child: Text(s.save),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            _SectionLabel('Аккаунт'),
+            _SectionLabel(s.proxySection),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: _card(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SwitchRow(
+                    title: s.proxyEnable,
+                    subtitle: s.proxyEnableHint,
+                    value: controller.proxyEnabled,
+                    onChanged: controller.setProxyEnabled,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: _proxyHost,
+                          decoration:
+                              illusioInput(s.proxyHost, hint: '127.0.0.1'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _proxyPort,
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              illusioInput(s.proxyPort, hint: '1080'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _proxyUser,
+                    decoration: illusioInput(
+                      s.proxyUser,
+                      hint: s.proxyUserHint,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _proxyPass,
+                    obscureText: _proxyPassObscured,
+                    decoration: illusioInput(
+                      s.proxyPassword,
+                      suffix: IconButton(
+                        onPressed: () => setState(
+                            () => _proxyPassObscured = !_proxyPassObscured),
+                        icon: Icon(
+                          _proxyPassObscured
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.proxyUdp,
+                    subtitle: s.proxyUdpHint,
+                    value: controller.proxyUdpRelay,
+                    onChanged: (value) => controller.setProxyFields(
+                      udpRelay: value,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.proxyApply,
+                    subtitle: s.proxyApplyHint,
+                    value: controller.proxyApplyToGame,
+                    onChanged: (value) => controller.setProxyFields(
+                      applyToGame: value,
+                    ),
+                  ),
+                  if (_proxyResult.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _proxyResult,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: _proxyResultColor),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _proxyBusy ? null : _probeProxy,
+                        icon: const Icon(Icons.network_check, size: 20),
+                        label: Text(s.proxyTest),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: _saveProxy,
+                        child: Text(s.save),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            _SectionLabel(s.accountSection),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -343,13 +565,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    controller.login?.username ?? 'Гость',
+                    controller.login?.username ?? s.guest,
                     style: theme.textTheme.titleMedium,
                   ),
                   Text(
                     controller.login == null
-                        ? 'войдите, чтобы играть на серверах с аутентификацией'
-                        : '${controller.accounts.length} сохранённых аккаунтов',
+                        ? s.accountHintGuest
+                        : s.accountsHintSignedInOf(controller.accounts.length),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
@@ -357,23 +579,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _guest,
                     decoration: illusioInput(
-                      'Имя гостя',
-                      hint: 'под каким именем заходить без аккаунта',
+                      s.guestName,
+                      hint: s.guestNameHint,
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _override,
                     decoration: illusioInput(
-                      'Подменить имя',
-                      hint: 'имя вместо логина аккаунта',
+                      s.overrideName,
+                      hint: s.overrideNameHint,
                     ),
                   ),
                   const SizedBox(height: 14),
                   FilledButton.tonalIcon(
                     onPressed: _saveAccount,
                     icon: const Icon(Icons.save_outlined, size: 20),
-                    label: const Text('Сохранить'),
+                    label: Text(s.save),
                   ),
                   const SizedBox(height: 14),
                   FilledButton.tonalIcon(
@@ -381,15 +603,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: const Icon(Icons.person_outline, size: 20),
                     label: Text(
                       controller.login == null
-                          ? 'Войти'
-                          : 'Управление аккаунтами',
+                          ? s.signIn
+                          : s.manageAccounts,
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            _SectionLabel('Диагностика'),
+            _SectionLabel(s.diagnostics),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
@@ -397,10 +619,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Конфиг хранится в:', style: theme.textTheme.bodyMedium),
+                  Text(s.configStored, style: theme.textTheme.bodyMedium),
                   const SizedBox(height: 6),
                   SelectableText(
-                    _pathsLoaded ? _configPath : 'загружаем…',
+                    _pathsLoaded ? _configPath : s.loadingDots,
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 16),
@@ -411,24 +633,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       OutlinedButton.icon(
                         onPressed: controller.openModsDir,
                         icon: const Icon(Icons.folder_open, size: 20),
-                        label: const Text('Каталог модов'),
+                        label: Text(s.modsDirOpen),
                       ),
                       OutlinedButton.icon(
                         onPressed: controller.openLogsDir,
                         icon: const Icon(Icons.receipt_long_outlined, size: 20),
-                        label: const Text('Каталог логов'),
+                        label: Text(s.logsDirOpen),
                       ),
                       OutlinedButton.icon(
                         onPressed: _clearCache,
                         icon: const Icon(Icons.cleaning_services_outlined,
                             size: 20),
-                        label: const Text('Очистить кэш'),
+                        label: Text(s.clearCache),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Illusio $appVersion · ядро ${Core.version()}',
+                    'Illusio $appVersion · ${s.coreLabel} ${Core.version()}',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),

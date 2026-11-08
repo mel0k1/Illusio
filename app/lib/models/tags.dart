@@ -1,3 +1,4 @@
+import '../l10n/strings.dart';
 import 'hub_server.dart';
 
 class ServerTagInfo {
@@ -67,37 +68,37 @@ class ServerTagInfo {
     return filter.substring(0, index);
   }
 
-  static String filterLabel(String filter) {
+  static String filterLabel(String filter, S s) {
     switch (filter) {
       case '18+':
-        return '18+';
+        return filter;
       case 'wl':
-        return 'Вайтлист';
+        return s.whitelist;
     }
     final category = categoryOf(filter);
     final value = filter.substring(filter.indexOf(':') + 1);
     switch (category) {
       case 'lang':
-        return 'Язык: ${value.toUpperCase()}';
+        return '${s.langPrefix}${value.toUpperCase()}';
       case 'region':
-        return 'Регион: ${value.toUpperCase()}';
+        return '${s.regionPrefix}${value.toUpperCase()}';
       case 'rp':
-        return 'RP: ${rpLabel(value)}';
+        return 'RP: ${rpLabel(value, s)}';
       default:
         return filter;
     }
   }
 
-  static String rpLabel(String value) {
+  static String rpLabel(String value, S s) {
     switch (value) {
       case 'none':
-        return 'нет';
+        return s.rpNone;
       case 'low':
-        return 'лёгкий';
+        return s.rpLow;
       case 'medium':
-        return 'средний';
+        return s.rpMedium;
       case 'high':
-        return 'тяжёлый';
+        return s.rpHigh;
       default:
         return value.toUpperCase();
     }

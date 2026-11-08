@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'package:flutter/material.dart';
 
 import 'ffi/bindings.dart';
+import 'l10n/strings.dart';
 import 'state/app_controller.dart';
 import 'ui/app_shell.dart';
 import 'ui/theme.dart';
@@ -55,7 +56,7 @@ class _IllusioAppState extends State<IllusioApp> {
     }
     setState(() {
       _blocked = true;
-      _blockReason = result['reason']?.toString() ?? 'версия устарела';
+      _blockReason = result['reason']?.toString() ?? _controller.s.outdatedVersion;
     });
   }
 
@@ -84,14 +85,17 @@ class _IllusioAppState extends State<IllusioApp> {
           'light' => ThemeMode.light,
           _ => ThemeMode.dark,
         };
-        return MaterialApp(
-          title: 'Illusio',
-          theme: buildIllusioTheme(Brightness.light),
-          darkTheme: buildIllusioTheme(Brightness.dark),
-          themeMode: mode,
-          home: _blocked
-              ? _BlockedScreen(reason: _blockReason)
-              : AppShell(controller: _controller),
+        return SB(
+          s: _controller.s,
+          child: MaterialApp(
+            title: 'Illusio',
+            theme: buildIllusioTheme(Brightness.light),
+            darkTheme: buildIllusioTheme(Brightness.dark),
+            themeMode: mode,
+            home: _blocked
+                ? _BlockedScreen(reason: _blockReason)
+                : AppShell(controller: _controller),
+          ),
         );
       },
     );
@@ -106,6 +110,7 @@ class _BlockedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final s = S.of(context);
     return Scaffold(
       body: Center(
         child: Padding(
@@ -116,7 +121,7 @@ class _BlockedScreen extends StatelessWidget {
               Icon(Icons.pause_circle_outline, size: 56, color: scheme.error),
               const SizedBox(height: 20),
               Text(
-                'Illusio больше не может запускать игру',
+                s.blockedTitle,
                 style: Theme.of(context).textTheme.titleLarge,
                 textAlign: TextAlign.center,
               ),
@@ -134,7 +139,7 @@ class _BlockedScreen extends StatelessWidget {
                   _open(context, 'https://github.com/mel0k1/Illusio/releases');
                 },
                 icon: const Icon(Icons.open_in_new, size: 20),
-                label: const Text('Открыть страницу релизов'),
+                label: Text(s.openReleases),
               ),
             ],
           ),

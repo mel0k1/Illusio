@@ -1,3 +1,5 @@
+import '../l10n/strings.dart';
+
 class ServerBuildInfo {
   const ServerBuildInfo({
     required this.downloadUrl,
@@ -177,36 +179,22 @@ class DownloadStateInfo {
     return (downloaded / total).clamp(0.0, 1.0);
   }
 
-  String get sizeLabel => _formatBytes(downloaded);
+  String sizeLabel(S s) => s.formatBytes(downloaded);
 
-  String get totalLabel => _formatBytes(total);
+  String totalLabel(S s) => s.formatBytes(total);
 
-  static String _formatBytes(int bytes) {
-    const units = ['Б', 'КБ', 'МБ', 'ГБ'];
-    double value = bytes.toDouble();
-    int unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    final shown = value >= 100
-        ? value.round().toString()
-        : value.toStringAsFixed(value >= 10 ? 1 : 2);
-    return '$shown ${units[unit]}';
-  }
-
-  String get phaseLabel {
+  String phaseLabel(S s) {
     switch (phase) {
       case 'info':
-        return message.isEmpty ? 'Получаем данные сервера' : message;
+        return message.isEmpty ? s.phaseServerData : message;
       case 'engine':
-        return message.isEmpty ? 'Загружаем движок' : message;
+        return message.isEmpty ? s.phaseEngine : message;
       case 'download':
-        return 'Загружаем клиент';
+        return s.phaseClient;
       case 'extract':
-        return message.isEmpty ? 'Распаковываем' : message;
+        return message.isEmpty ? s.phaseExtract : message;
       case 'done':
-        return message.isEmpty ? 'Клиент готов' : message;
+        return message.isEmpty ? s.phaseReady : message;
       case 'error':
         return error;
       default:

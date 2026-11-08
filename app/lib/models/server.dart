@@ -7,7 +7,7 @@ class GameServer {
 
   factory GameServer.fromJson(Map<String, dynamic> json) {
     return GameServer(
-      name: (json['name'] as String?) ?? 'Сервер',
+      name: (json['name'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
       raised: (json['raised'] as num?)?.toInt() ?? 0,
     );

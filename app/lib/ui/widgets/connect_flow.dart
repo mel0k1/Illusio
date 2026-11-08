@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/strings.dart';
 import '../../models/server.dart';
 import '../../models/server_info.dart';
 import '../../state/app_controller.dart';
@@ -40,7 +41,7 @@ Future<void> connectFlow(
     builder: (dialogContext) => _ConnectDialog(
       controller: controller,
       server: server,
-      title: server.name.isEmpty ? 'Подключение' : server.name,
+      title: server.name.isEmpty ? S.of(context).connecting : server.name,
     ),
   );
 }
@@ -60,7 +61,7 @@ Future<void> bundleFlow(
     builder: (dialogContext) => _ConnectDialog(
       controller: controller,
       server: GameServer(name: fileName, url: ''),
-      title: 'Запуск реплея',
+      title: S.of(context).launchingReplay,
       isBundle: true,
       bundlePath: zipPath,
     ),
@@ -73,20 +74,19 @@ Future<bool> _askPrivacy(
   String serverName,
   ServerPrivacyInfo policy,
 ) async {
+  final s = S.of(context);
   final result = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Политика конфиденциальности'),
+      title: Text(s.privacyTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Сервер «$serverName» требует принять свою политику конфиденциальности перед подключением.',
-          ),
+          Text(s.privacyBody(serverName)),
           const SizedBox(height: 12),
           Text(
-            'Версия: ${policy.version}',
+            s.privacyVersion(policy.version),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -96,11 +96,11 @@ Future<bool> _askPrivacy(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Отклонить'),
+          child: Text(s.reject),
         ),
         FilledButton.tonal(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('Принять'),
+          child: Text(s.accept),
         ),
       ],
     ),
@@ -143,6 +143,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
   Future<void> _run() async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final s = S.of(context);
     final result = widget.isBundle
         ? await widget.controller.connectBundle(widget.bundlePath)
         : await widget.controller.connect(widget.server);
@@ -151,11 +152,10 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     }
     navigator.pop();
     if (result['ok'] == true) {
-      messenger.showSnackBar(illusioSnackBar('Клиент запущен'));
+      messenger.showSnackBar(illusioSnackBar(s.clientStarted));
     } else {
       messenger.showSnackBar(
-        illusioSnackBar(
-            result['error']?.toString() ?? 'не удалось подключиться'),
+        illusioSnackBar(result['error']?.toString() ?? s.connectFailed),
       );
     }
   }
@@ -178,7 +178,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
         actions: [
           TextButton(
             onPressed: _hide,
-            child: const Text('Скрыть'),
+            child: Text(S.of(context).hide),
           ),
         ],
       ),
@@ -222,13 +222,13 @@ class _DownloadBody extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                state.phaseLabel,
+                state.phaseLabel(S.of(context)),
                 style: theme.textTheme.bodyMedium?.copyWith(color: color),
               ),
             ),
             if (showBar && state.total > 0)
               Text(
-                '${state.sizeLabel} / ${state.totalLabel}',
+                '${state.sizeLabel(S.of(context))} / ${state.totalLabel(S.of(context))}',
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -278,7 +278,7 @@ class DownloadInline extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  state.phaseLabel,
+                  state.phaseLabel(S.of(context)),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

@@ -25,7 +25,7 @@ pub fn status_url(server_url: &str) -> String {
 }
 
 pub fn fetch_status(server_url: &str) -> Result<ServerStatus, String> {
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|error| error.to_string())?;

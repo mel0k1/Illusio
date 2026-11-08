@@ -3,6 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use crate::config::ProxyConfig;
+use crate::socks::{parse_udp_address, prepare_udp_relay, PreparedRelay};
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LaunchSpec {
     #[serde(default)]
@@ -51,6 +54,8 @@ pub struct LaunchSpec {
     pub engine_sig: String,
     #[serde(default)]
     pub mods: Vec<String>,
+    #[serde(default)]
+    pub mod_dlls: Vec<String>,
     #[serde(default, rename = "log_dir")]
     pub log_dir: String,
     #[serde(default, rename = "allow_unsigned")]
@@ -150,7 +155,44 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     if !mods.is_empty() {
         env.push(("SS14_LOADER_OVERLAY_ZIPS".into(), mods.join(";")));
     }
+    let dlls: Vec<String> = spec
+        .mod_dlls
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if !dlls.is_empty() {
+        env.push(("SS14_LOADER_MOD_DLLS".into(), dlls.join(";")));
+    }
     env
+}
+
+fn apply_proxy_env(command: &mut Command, proxy: &ProxyConfig) {
+    if !proxy.enabled || !proxy.apply_to_game {
+        return;
+    }
+    if let Some(url) = crate::socks::proxy_url(proxy) {
+        for key in ["ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY"] {
+            command.env(key, &url);
+        }
+        command.env("NO_PROXY", "localhost,127.0.0.1");
+    }
+}
+
+fn prepare_relay(proxy: &ProxyConfig, args: &mut [String]) -> Option<PreparedRelay> {
+    if !proxy.enabled || !proxy.udp_relay {
+        return None;
+    }
+    let index = args.iter().position(|value| value == "--connect-address")?;
+    let address = args.get(index + 1)?.clone();
+    let (host, port) = parse_udp_address(&address)?;
+    match prepare_udp_relay(proxy, &host, port) {
+        Ok(relay) => {
+            args[index + 1] = format!("udp://127.0.0.1:{}", relay.local_port);
+            Some(relay)
+        }
+        Err(_) => None,
+    }
 }
 
 pub fn loader_path(loader_dir: &str) -> PathBuf {
@@ -191,26 +233,37 @@ fn apply_streams(command: &mut Command, log_dir: &str) {
 }
 
 pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
+    let config = crate::config::load().unwrap_or_default();
+    let proxy = config.proxy();
     if spec.mode.trim().eq_ignore_ascii_case("acz") {
-        return launch_loader(spec);
+        return launch_loader(spec, &proxy);
     }
     let path = client_path(&spec.install_dir);
     if !path.exists() {
         return Err(format!("клиент не найден: {}", path.display()));
     }
+    let mut args = build_args(spec);
+    let relay = prepare_relay(&proxy, &mut args);
     let mut command = Command::new(&path);
-    command.args(build_args(spec));
+    command.args(&args);
     apply_streams(&mut command, &spec.log_dir);
     for (key, value) in build_env(spec) {
         command.env(key, value);
     }
+    apply_proxy_env(&mut command, &proxy);
     let child = command
         .spawn()
         .map_err(|error| format!("не удалось запустить клиент: {error}"))?;
-    Ok(child.id())
+    let pid = child.id();
+    if let Some(relay) = relay {
+        relay.start(child);
+    } else {
+        drop(child);
+    }
+    Ok(pid)
 }
 
-fn launch_loader(spec: &LaunchSpec) -> Result<u32, String> {
+fn launch_loader(spec: &LaunchSpec, proxy: &ProxyConfig) -> Result<u32, String> {
     let loader = loader_path(&spec.loader_dir);
     if !loader.exists() {
         return Err(
@@ -233,12 +286,10 @@ fn launch_loader(spec: &LaunchSpec) -> Result<u32, String> {
     if sig.is_empty() {
         return Err("у сборки движка нет подписи".into());
     }
+    let mut args = build_args(spec);
+    let relay = prepare_relay(proxy, &mut args);
     let mut command = Command::new(&loader);
-    command
-        .arg(&engine_zip)
-        .arg(sig)
-        .arg(&pubkey)
-        .args(build_args(spec));
+    command.arg(&engine_zip).arg(sig).arg(&pubkey).args(&args);
     apply_streams(&mut command, &spec.log_dir);
     command.env("SS14_LOADER_OVERLAY_ZIP", &content_zip);
     if spec.allow_unsigned {
@@ -247,10 +298,17 @@ fn launch_loader(spec: &LaunchSpec) -> Result<u32, String> {
     for (key, value) in build_env(spec) {
         command.env(key, value);
     }
+    apply_proxy_env(&mut command, proxy);
     let child = command
         .spawn()
         .map_err(|error| format!("не удалось запустить клиент: {error}"))?;
-    Ok(child.id())
+    let pid = child.id();
+    if let Some(relay) = relay {
+        relay.start(child);
+    } else {
+        drop(child);
+    }
+    Ok(pid)
 }
 
 #[cfg(test)]
@@ -334,6 +392,20 @@ mod tests {
         assert!(env.contains(&(
             "ROBUST_AUTH_SERVER".into(),
             "https://auth.spacestation14.com/".into()
+        )));
+    }
+
+    #[test]
+    fn env_carries_dll_mods() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            mod_dlls: vec!["/mods/a.dll".into(), " ".into(), "/mods/b.dll".into()],
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&(
+            "SS14_LOADER_MOD_DLLS".into(),
+            "/mods/a.dll;/mods/b.dll".into()
         )));
     }
 

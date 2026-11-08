@@ -4,10 +4,12 @@ pub mod acz;
 pub mod auth;
 pub mod config;
 pub mod engine;
+pub mod http;
 pub mod hub;
 pub mod install;
 mod launch;
 pub mod remote;
+pub mod socks;
 pub mod status;
 pub mod sys;
 
@@ -438,10 +440,28 @@ pub unsafe extern "C" fn illusio_open_path(path: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn illusio_scan_mods(path: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn illusio_scan_mods(raw: *const c_char) -> *mut c_char {
     guarded(|| {
-        let dir = PathBuf::from(read_ptr(path));
-        match sys::ensure_dir(&dir).and_then(|_| sys::scan_mods(&dir)) {
+        let payload = read_ptr(raw);
+        let trimmed = payload.trim();
+        let (dir_raw, loader_dir) = if trimmed.starts_with('{') {
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(value) => (
+                    value["path"].as_str().unwrap_or_default().to_string(),
+                    value["loader_dir"].as_str().unwrap_or_default().to_string(),
+                ),
+                Err(_) => (payload.clone(), String::new()),
+            }
+        } else {
+            (payload, String::new())
+        };
+        let dir = PathBuf::from(&dir_raw);
+        let metadata = if loader_dir.trim().is_empty() {
+            Vec::new()
+        } else {
+            sys::read_dll_metadata(&PathBuf::from(loader_dir.trim()), &dir)
+        };
+        match sys::ensure_dir(&dir).and_then(|_| sys::scan_mods(&dir, &metadata)) {
             Ok(mods) => serde_json::json!({
                 "ok": true,
                 "mods": mods,
@@ -471,6 +491,75 @@ pub extern "C" fn illusio_mods_dir() -> *mut c_char {
         })
         .to_string(),
     })
+}
+
+#[derive(Deserialize)]
+struct ProxyProbePayload {
+    #[serde(default)]
+    host: String,
+    #[serde(default)]
+    port: i64,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default)]
+    udp: bool,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_proxy_probe(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<ProxyProbePayload>(&read_ptr(raw)) {
+            Ok(payload) => {
+                let proxy = config::ProxyConfig {
+                    enabled: true,
+                    host: payload.host.trim().to_string(),
+                    port: payload.port.clamp(0, 65535) as u16,
+                    username: payload.username,
+                    password: payload.password,
+                    udp_relay: false,
+                    apply_to_game: false,
+                };
+                if proxy.host.is_empty() || proxy.port == 0 {
+                    return serde_json::json!({
+                        "ok": false,
+                        "error": "укажите адрес и порт прокси",
+                    })
+                    .to_string();
+                }
+                match socks::probe_tcp(&proxy) {
+                    Ok(rtt) => {
+                        let (udp_ok, udp_error) = if payload.udp {
+                            match socks::probe_udp(&proxy) {
+                                Ok(()) => (true, String::new()),
+                                Err(error) => (false, error),
+                            }
+                        } else {
+                            (false, String::new())
+                        };
+                        serde_json::json!({
+                            "ok": true,
+                            "rtt_ms": rtt,
+                            "udp_ok": udp_ok,
+                            "udp_error": udp_error,
+                        })
+                        .to_string()
+                    }
+                    Err(error) => serde_json::json!({
+                        "ok": false,
+                        "error": error,
+                    })
+                    .to_string(),
+                }
+            }
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
 }
 
 #[no_mangle]

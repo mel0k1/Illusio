@@ -69,7 +69,7 @@ pub fn parse_manifest(text: &str) -> Result<Vec<ManifestEntry>, String> {
 }
 
 pub fn fetch_manifest(manifest_url: &str) -> Result<(Vec<ManifestEntry>, String), String> {
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(MANIFEST_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())?;

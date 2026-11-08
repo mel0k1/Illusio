@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/bindings.dart';
+import '../l10n/strings.dart';
 import '../models/hub_server.dart';
 import '../models/login_info.dart';
 import '../models/server.dart';
@@ -29,6 +30,7 @@ class AppController extends ChangeNotifier {
   LoginInfo? login;
 
   String theme = 'system';
+  String language = 'ru';
   bool hideEmpty = false;
   bool hideFull = false;
   bool fullscreen = false;
@@ -43,7 +45,20 @@ class AppController extends ChangeNotifier {
   int filterMaxPlayers = 0;
   List<Map<String, String>> acceptedPrivacy = [];
 
+  bool proxyEnabled = false;
+  String proxyHost = '';
+  int proxyPort = 1080;
+  String proxyUsername = '';
+  String proxyPassword = '';
+  bool proxyUdpRelay = false;
+  bool proxyApplyToGame = false;
+
+  bool get ru => language != 'en';
+
+  S get s => S(language);
+
   final List<String> modsEnabled = [];
+  final List<String> dllModsEnabled = [];
   List<ModEntry> mods = [];
   String modsPath = '';
   String logsPath = '';
@@ -66,7 +81,7 @@ class AppController extends ChangeNotifier {
   String get effectiveUsername {
     if (isGuest) {
       final guest = guestUsername.trim();
-      return guest.isEmpty ? 'Гость' : guest;
+      return guest.isEmpty ? (ru ? 'Гость' : 'Guest') : guest;
     }
     final override = usernameOverride.trim();
     if (override.isNotEmpty) {
@@ -101,6 +116,7 @@ class AppController extends ChangeNotifier {
           ),
         );
       theme = config['theme']?.toString() ?? 'system';
+      language = config['language']?.toString() ?? 'ru';
       hideEmpty = config['hide_empty'] == true;
       hideFull = config['hide_full'] == true;
       fullscreen = config['fullscreen'] == true;
@@ -130,6 +146,19 @@ class AppController extends ChangeNotifier {
                 'version': entry['version']?.toString() ?? '',
               })
           .toList();
+      proxyEnabled = config['proxy_enabled'] == true;
+      proxyHost = config['proxy_host']?.toString() ?? '';
+      proxyPort = (config['proxy_port'] as num?)?.toInt() ?? 1080;
+      proxyUsername = config['proxy_username']?.toString() ?? '';
+      proxyPassword = config['proxy_password']?.toString() ?? '';
+      proxyUdpRelay = config['proxy_udp_relay'] == true;
+      proxyApplyToGame = config['proxy_apply_to_game'] == true;
+      dllModsEnabled
+        ..clear()
+        ..addAll(
+          ((config['dll_mods_enabled'] as List?) ?? const [])
+              .map((value) => value.toString()),
+        );
       if (login != null &&
           login!.token.isNotEmpty &&
           !_accountsContain(login!)) {
@@ -181,6 +210,15 @@ class AppController extends ChangeNotifier {
       'filter_min_players': filterMinPlayers,
       'filter_max_players': filterMaxPlayers,
       'accepted_privacy': acceptedPrivacy,
+      'language': language,
+      'proxy_enabled': proxyEnabled,
+      'proxy_host': proxyHost,
+      'proxy_port': proxyPort,
+      'proxy_username': proxyUsername,
+      'proxy_password': proxyPassword,
+      'proxy_udp_relay': proxyUdpRelay,
+      'proxy_apply_to_game': proxyApplyToGame,
+      'dll_mods_enabled': dllModsEnabled,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
@@ -246,7 +284,7 @@ class AppController extends ChangeNotifier {
     String tfaCode,
   ) async {
     if (loginBusy) {
-      return {'ok': false, 'error': 'запрос уже выполняется'};
+      return {'ok': false, 'error': s.busyRequest};
     }
     loginBusy = true;
     loginError = '';
@@ -262,7 +300,7 @@ class AppController extends ChangeNotifier {
     if (result['ok'] == true) {
       final updated = LoginInfo.fromMap(result['login']);
       if (updated == null) {
-        loginError = 'сервер авторизации вернул неполный ответ';
+        loginError = s.authIncomplete;
       } else {
         login = updated;
         loginError = '';
@@ -277,7 +315,7 @@ class AppController extends ChangeNotifier {
         await saveConfig();
       }
     } else {
-      loginError = result['error']?.toString() ?? 'авторизация не удалась';
+      loginError = result['error']?.toString() ?? s.authFailed;
     }
     notifyListeners();
     return result;
@@ -287,7 +325,7 @@ class AppController extends ChangeNotifier {
     final guest = guestUsername.trim();
     login = LoginInfo(
       token: '',
-      username: guest.isEmpty ? 'Гость' : guest,
+      username: guest.isEmpty ? (ru ? 'Гость' : 'Guest') : guest,
       userId: '',
       expireTime: '',
       authServer: '',
@@ -449,7 +487,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       _pingVisible();
     } else {
-      hubError = result['error']?.toString() ?? 'хаб недоступен';
+      hubError = result['error']?.toString() ?? s.hubUnavailable;
     }
     notifyListeners();
   }
@@ -478,6 +516,59 @@ class AppController extends ChangeNotifier {
     theme = value;
     notifyListeners();
     saveConfig();
+  }
+
+  void setLanguage(String value) {
+    language = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setProxyEnabled(bool value) {
+    proxyEnabled = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setProxyFields({
+    String? host,
+    int? port,
+    String? username,
+    String? password,
+    bool? udpRelay,
+    bool? applyToGame,
+  }) {
+    if (host != null) {
+      proxyHost = host;
+    }
+    if (port != null) {
+      proxyPort = port;
+    }
+    if (username != null) {
+      proxyUsername = username;
+    }
+    if (password != null) {
+      proxyPassword = password;
+    }
+    if (udpRelay != null) {
+      proxyUdpRelay = udpRelay;
+    }
+    if (applyToGame != null) {
+      proxyApplyToGame = applyToGame;
+    }
+    notifyListeners();
+    saveConfig();
+  }
+
+  Future<Map<String, dynamic>> proxyProbe(bool udp) async {
+    final payload = jsonEncode({
+      'host': proxyHost,
+      'port': proxyPort,
+      'username': proxyUsername,
+      'password': proxyPassword,
+      'udp': udp,
+    });
+    return Isolate.run(() => Core.proxyProbe(payload));
   }
 
   void setHideEmpty(bool value) {
@@ -509,7 +600,7 @@ class AppController extends ChangeNotifier {
     if (isGuest) {
       login = LoginInfo(
         token: '',
-        username: value.trim().isEmpty ? 'Гость' : value.trim(),
+        username: value.trim().isEmpty ? (ru ? 'Гость' : 'Guest') : value.trim(),
         userId: '',
         expireTime: '',
         authServer: '',
@@ -560,13 +651,21 @@ class AppController extends ChangeNotifier {
     if (modsPath.isEmpty) {
       return;
     }
-    final result = await Isolate.run(() => Core.scanMods(modsPath));
+    final result = await Isolate.run(
+      () => Core.scanMods(jsonEncode({
+            'path': modsPath,
+            'loader_dir': loaderDir,
+          })),
+    );
     if (result['ok'] == true) {
       mods = ((result['mods'] as List?) ?? const [])
           .map(ModEntry.fromMap)
           .toList();
       modsEnabled.removeWhere(
         (name) => !mods.any((entry) => entry.fileName == name),
+      );
+      dllModsEnabled.removeWhere(
+        (name) => !mods.any((entry) => entry.path == name),
       );
       notifyListeners();
     }
@@ -577,6 +676,16 @@ class AppController extends ChangeNotifier {
       modsEnabled.remove(fileName);
     } else {
       modsEnabled.add(fileName);
+    }
+    notifyListeners();
+    saveConfig();
+  }
+
+  void toggleDllMod(String path) {
+    if (dllModsEnabled.contains(path)) {
+      dllModsEnabled.remove(path);
+    } else {
+      dllModsEnabled.add(path);
     }
     notifyListeners();
     saveConfig();
@@ -633,7 +742,7 @@ class AppController extends ChangeNotifier {
     if (result['ok'] == true) {
       statusInfo = ServerStatusInfo.fromMap(result['status']);
     } else {
-      loadError = result['error']?.toString() ?? 'сервер не отвечает';
+      loadError = result['error']?.toString() ?? s.serverNotResponding;
     }
     notifyListeners();
   }
@@ -663,6 +772,12 @@ class AppController extends ChangeNotifier {
     }
     final separator = Platform.isWindows ? '\\' : '/';
     return modsEnabled.map((name) => '$modsPath$separator$name').toList();
+  }
+
+  List<String> enabledDllPaths() {
+    return dllModsEnabled
+        .where((path) => File(path).existsSync())
+        .toList();
   }
 
   Map<String, String?> _authFields(ServerFullInfo? info) {
@@ -713,6 +828,7 @@ class AppController extends ChangeNotifier {
       'content_zip': acz ? downloadState.contentZip : '',
       'engine_sig': engineSig,
       'mods': acz ? overlays : [],
+      'mod_dlls': acz ? enabledDllPaths() : [],
       'log_dir': logDir,
       'allow_unsigned': useOverride,
     };
@@ -720,7 +836,7 @@ class AppController extends ChangeNotifier {
 
   Future<Map<String, dynamic>> connect(GameServer server) async {
     if (connecting) {
-      return {'ok': false, 'error': 'подключение уже идёт'};
+      return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
     selectedServer = server;
@@ -739,7 +855,7 @@ class AppController extends ChangeNotifier {
         downloaded: 0,
         total: 0,
         message: '',
-        error: started['error']?.toString() ?? 'не удалось начать загрузку',
+        error: started['error']?.toString() ?? s.downloadStartFailed,
         running: false,
         installDir: '',
         mode: '',
@@ -756,7 +872,7 @@ class AppController extends ChangeNotifier {
 
   Future<Map<String, dynamic>> connectBundle(String zipPath) async {
     if (connecting) {
-      return {'ok': false, 'error': 'подключение уже идёт'};
+      return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
     selectedServer = null;

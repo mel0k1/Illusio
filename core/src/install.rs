@@ -84,7 +84,7 @@ pub fn info_url(server_url: &str) -> String {
 }
 
 fn status_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(STATUS_TIMEOUT)
         .build()
         .map_err(|error| error.to_string())
@@ -857,7 +857,7 @@ fn sanitize_component(value: &str) -> String {
 }
 
 fn download_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    crate::http::with_proxy(reqwest::blocking::Client::builder())
         .timeout(None)
         .connect_timeout(DOWNLOAD_TIMEOUT)
         .build()

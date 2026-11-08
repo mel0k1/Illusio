@@ -66,6 +66,54 @@ pub struct Config {
     pub filter_max_players: i64,
     #[serde(default)]
     pub accepted_privacy: Vec<PrivacyAccept>,
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub proxy_enabled: bool,
+    #[serde(default)]
+    pub proxy_host: String,
+    #[serde(default)]
+    pub proxy_port: i64,
+    #[serde(default)]
+    pub proxy_username: String,
+    #[serde(default)]
+    pub proxy_password: String,
+    #[serde(default)]
+    pub proxy_udp_relay: bool,
+    #[serde(default)]
+    pub proxy_apply_to_game: bool,
+    #[serde(default)]
+    pub dll_mods_enabled: Vec<String>,
+}
+
+fn default_language() -> String {
+    "ru".to_string()
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProxyConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub udp_relay: bool,
+    pub apply_to_game: bool,
+}
+
+impl Config {
+    pub fn proxy(&self) -> ProxyConfig {
+        let port = self.proxy_port.clamp(0, 65535) as u16;
+        ProxyConfig {
+            enabled: self.proxy_enabled,
+            host: self.proxy_host.trim().to_string(),
+            port,
+            username: self.proxy_username.clone(),
+            password: self.proxy_password.clone(),
+            udp_relay: self.proxy_udp_relay,
+            apply_to_game: self.proxy_apply_to_game,
+        }
+    }
 }
 
 pub fn config_dir() -> Option<PathBuf> {
@@ -120,7 +168,7 @@ mod tests {
 
     #[test]
     fn roundtrips_new_fields() {
-        let config = Config {
+        let mut config = Config {
             hubs: vec!["https://hub.example.com/".into()],
             guest_username: "Гость".into(),
             username_override: "mel0k1".into(),
@@ -141,9 +189,23 @@ mod tests {
             }],
             ..Config::default()
         };
+        config.proxy_enabled = true;
+        config.proxy_host = "127.0.0.1".into();
+        config.proxy_port = 1080;
+        config.proxy_username = "user".into();
+        config.proxy_password = "pass".into();
+        config.proxy_udp_relay = true;
+        config.proxy_apply_to_game = true;
+        config.language = "en".into();
+        config.dll_mods_enabled = vec!["half.dll".into()];
         let raw = serde_json::to_string(&config).unwrap();
         let parsed: Config = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed.hubs, config.hubs);
+        assert!(parsed.proxy_enabled);
+        assert_eq!(parsed.proxy().port, 1080);
+        assert!(parsed.proxy().udp_relay);
+        assert_eq!(parsed.language, "en");
+        assert_eq!(parsed.dll_mods_enabled, vec!["half.dll".to_string()]);
         assert_eq!(parsed.guest_username, "Гость");
         assert_eq!(parsed.username_override, "mel0k1");
         assert!(parsed.client_logs);
@@ -163,5 +225,8 @@ mod tests {
         assert_eq!(parsed.favorites[0].raised, 0);
         assert!(parsed.hubs.is_empty());
         assert!(!parsed.client_logs);
+        assert_eq!(parsed.language, "ru");
+        assert!(!parsed.proxy_enabled);
+        assert!(parsed.dll_mods_enabled.is_empty());
     }
 }

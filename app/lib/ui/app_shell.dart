@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/strings.dart';
 import '../models/server.dart';
 import '../state/app_controller.dart';
 import 'theme.dart';
@@ -20,22 +21,25 @@ class DockItem {
 
   final IconData icon;
   final IconData selectedIcon;
-  final String label;
+  final String Function(S s) label;
 }
 
-const List<DockItem> dockItems = [
+final List<DockItem> dockItems = [
   DockItem(
-      icon: Icons.star_outline, selectedIcon: Icons.star, label: 'Главная'),
+      icon: Icons.star_outline,
+      selectedIcon: Icons.star,
+      label: (s) => s.home),
   DockItem(
     icon: Icons.travel_explore_outlined,
     selectedIcon: Icons.travel_explore,
-    label: 'Сервера',
+    label: (s) => s.servers,
   ),
-  DockItem(icon: Icons.tune, selectedIcon: Icons.tune, label: 'Настройки'),
+  DockItem(
+      icon: Icons.tune, selectedIcon: Icons.tune, label: (s) => s.settings),
   DockItem(
     icon: Icons.extension_outlined,
     selectedIcon: Icons.extension,
-    label: 'Моды',
+    label: (s) => s.mods,
   ),
 ];
 
@@ -82,6 +86,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final s = S.of(context);
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -104,6 +109,7 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: IllusioDock(
         index: _index,
         scheme: scheme,
+        labels: dockItems.map((item) => item.label(s)).toList(),
         onSelect: (value) => setState(() => _index = value),
       ),
     );
@@ -158,7 +164,7 @@ class _AccountChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final label = name ?? 'Войти';
+    final label = name ?? S.of(context).signIn;
     return Material(
       color: scheme.surfaceContainer,
       shape: const StadiumBorder(),
@@ -246,11 +252,13 @@ class IllusioDock extends StatelessWidget {
     super.key,
     required this.index,
     required this.scheme,
+    required this.labels,
     required this.onSelect,
   });
 
   final int index;
   final ColorScheme scheme;
+  final List<String> labels;
   final ValueChanged<int> onSelect;
 
   @override
@@ -278,6 +286,7 @@ class IllusioDock extends StatelessWidget {
               Expanded(
                 child: _DockButton(
                   item: dockItems[i],
+                  label: labels[i],
                   selected: i == index,
                   scheme: scheme,
                   onTap: () => onSelect(i),
@@ -293,12 +302,14 @@ class IllusioDock extends StatelessWidget {
 class _DockButton extends StatelessWidget {
   const _DockButton({
     required this.item,
+    required this.label,
     required this.selected,
     required this.scheme,
     required this.onTap,
   });
 
   final DockItem item;
+  final String label;
   final bool selected;
   final ColorScheme scheme;
   final VoidCallback onTap;
@@ -343,7 +354,7 @@ class _DockButton extends StatelessWidget {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          item.label,
+                          label,
                           style: Theme.of(context)
                               .textTheme
                               .labelLarge

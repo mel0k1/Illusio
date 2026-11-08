@@ -1,3 +1,5 @@
+import '../l10n/strings.dart';
+
 class ServerStatusInfo {
   const ServerStatusInfo({
     required this.name,
@@ -38,10 +40,5 @@ class ServerStatusInfo {
   String get cleanMessage =>
       statusMessage.replaceAll(RegExp(r'<[^>]*>'), ' ').trim();
 
-  String get playersLabel {
-    if (softMaxPlayers <= 0) {
-      return '$playerCount игроков';
-    }
-    return '$playerCount / $softMaxPlayers игроков';
-  }
+  String playersLabel(S s) => s.playersOf(playerCount, softMaxPlayers);
 }

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:illusio/models/hub_server.dart';
 import 'package:illusio/models/server.dart';
+import 'package:illusio/l10n/strings.dart';
 import 'package:illusio/models/tags.dart';
 
 void main() {
@@ -21,7 +22,7 @@ void main() {
     expect(server.address, 'ss14s://erida.example.net');
     expect(server.name, 'Эрида');
     expect(server.playersLabel, '25/100');
-    expect(server.runLevelLabel, 'В раунде');
+    expect(server.runLevelLabel(const S('ru')), 'В раунде');
     expect(server.empty, isFalse);
   });
 
@@ -34,7 +35,7 @@ void main() {
     expect(server.softMaxPlayers, 0);
     expect(server.playersLabel, '4');
     expect(server.tags, isEmpty);
-    expect(server.runLevelLabel, 'Лобби');
+    expect(server.runLevelLabel(const S('ru')), 'Лобби');
   });
 
   test('empty hub server is marked empty', () {
@@ -49,7 +50,7 @@ void main() {
       'size': 1048576,
     });
     expect(mod.fileName, 'pack_a.zip');
-    expect(mod.sizeLabel, '1.00 МБ');
+    expect(mod.sizeLabel(const S('ru')), '1.00 МБ');
     expect(ModEntry.fromMap(null).fileName, isEmpty);
   });
 
@@ -88,9 +89,13 @@ void main() {
     expect(ServerTagInfo.categoryOf('rp:mrp'), 'rp');
     expect(ServerTagInfo.categoryOf('18+'), '18+');
     expect(ServerTagInfo.categoryOf('wl'), 'wl');
-    expect(ServerTagInfo.filterLabel('lang:ru'), 'Язык: RU');
-    expect(ServerTagInfo.filterLabel('rp:low'), 'RP: лёгкий');
-    expect(ServerTagInfo.filterLabel('wl'), 'Вайтлист');
+    final s = const S('ru');
+    expect(ServerTagInfo.filterLabel('lang:ru', s), 'Язык: RU');
+    expect(ServerTagInfo.filterLabel('rp:low', s), 'RP: лёгкий');
+    expect(ServerTagInfo.filterLabel('wl', s), 'Вайтлист');
+    expect(ServerTagInfo.filterLabel('wl', const S('en')), 'Whitelist');
+    expect(const S('en').playersOf(5, 0), '5 players');
+    expect(const S('ru').playersOf(5, 0), '5 игроков');
   });
 
   test('ping quality maps to colors', () {
@@ -123,5 +128,18 @@ void main() {
     final copy = server.copyWith(raised: 999);
     expect(copy.raised, 999);
     expect(copy.url, 'ss14://a.example');
+  });
+
+  test('strings switch language', () {
+    const ru = S('ru');
+    const en = S('en');
+    expect(ru.servers, 'Сервера');
+    expect(en.servers, 'Servers');
+    expect(ru.serversCount(1, 2, 3), contains('онлайн'));
+    expect(en.serversCount(1, 2, 3), contains('online'));
+    expect(ru.proxyOk(42), contains('мс'));
+    expect(en.proxyOk(42), contains('ms'));
+    expect(en.formatBytes(1048576), '1.00 MB');
+    expect(ru.formatBytes(1048576), '1.00 МБ');
   });
 }

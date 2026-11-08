@@ -7,13 +7,28 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Threading;
+using HarmonyLib;
 using NSec.Cryptography;
 using Robust.LoaderApi;
 
 namespace SS14.Loader;
 
+internal sealed record ModInfo(
+    string Path,
+    Assembly Assembly,
+    Type? Marker,
+    string Name,
+    string Description);
+
 internal class Program
 {
+    private const string MarkerType = "IllusioMod";
+    private const string HarmonyId = "io.github.mel0k1.illusio.mods";
+    private const string ModsEnv = "SS14_LOADER_MOD_DLLS";
+
     private readonly string[] _engineArgs;
     private const string RobustAssemblyName = "Robust.Client";
 
@@ -69,6 +84,8 @@ internal class Program
                 extraMounts.Add(new ApiMount(api, "/"));
             }
 
+            ApplyMods(overlays);
+
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
 
             loader.Main(args);
@@ -81,6 +98,219 @@ internal class Program
             }
         }
         return true;
+    }
+
+    private void ApplyMods(IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)
+    {
+        var paths = ParsePathList(Environment.GetEnvironmentVariable(ModsEnv));
+        if (paths.Count == 0)
+            return;
+
+        var mods = LoadModAssemblies(paths);
+        if (mods.Count == 0)
+            return;
+
+        var harmony = new Harmony(HarmonyId);
+        var failed = ApplyModList(mods, harmony);
+        if (failed.Count > 0)
+            StartContentPatchThread(failed, harmony, overlays);
+    }
+
+    private static List<string> ParsePathList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+
+        return raw
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(File.Exists)
+            .ToList();
+    }
+
+    private static List<ModInfo> LoadModAssemblies(IReadOnlyList<string> paths)
+    {
+        var result = new List<ModInfo>();
+        foreach (var path in paths)
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(path);
+                var assembly = Assembly.Load(bytes);
+                var marker = FindMarker(assembly);
+                var name = ReadMarkerString(marker, "Name");
+                var description = ReadMarkerString(marker, "Description");
+                var displayName = string.IsNullOrWhiteSpace(name)
+                    ? Path.GetFileNameWithoutExtension(path)
+                    : name;
+                Console.WriteLine($"[ILLUSIO-MODS] загружен {displayName} ({Path.GetFileName(path)})");
+                result.Add(new ModInfo(path, assembly, marker, displayName, description ?? ""));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ILLUSIO-MODS] не удалось загрузить {Path.GetFileName(path)}: {e.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    private static string? ReadMarkerString(Type? marker, string field)
+    {
+        return marker
+            ?.GetField(field, BindingFlags.Public | BindingFlags.Static)
+            ?.GetValue(null) as string;
+    }
+
+    private static Type? FindMarker(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes().FirstOrDefault(type => type.Name == MarkerType)
+                ?? assembly.GetType(MarkerType);
+        }
+        catch
+        {
+            return assembly.GetType(MarkerType);
+        }
+    }
+
+    private static MethodInfo? FindPatchMethod(Type marker)
+    {
+        var candidates = marker.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(method => method.Name == "Patch" && !method.IsGenericMethod)
+            .ToList();
+        return candidates.FirstOrDefault(method => method.GetParameters().Length == 1)
+            ?? candidates.FirstOrDefault(method => method.GetParameters().Length == 0);
+    }
+
+    private static List<ModInfo> ApplyModList(IReadOnlyList<ModInfo> mods, Harmony harmony)
+    {
+        var failed = new List<ModInfo>();
+        foreach (var mod in mods)
+        {
+            if (mod.Marker == null)
+            {
+                Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: нет класса {MarkerType}, пропуск");
+                continue;
+            }
+
+            var method = FindPatchMethod(mod.Marker);
+            if (method == null)
+            {
+                Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: не найден публичный статический метод Patch");
+                continue;
+            }
+
+            try
+            {
+                var parameters = method.GetParameters();
+                method.Invoke(
+                    null,
+                    parameters.Length == 1 ? new object[] { harmony } : Array.Empty<object>());
+                Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: патчи применены");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: {e.InnerException?.Message ?? e.Message}");
+                failed.Add(mod);
+            }
+        }
+
+        return failed;
+    }
+
+    private static void StartContentPatchThread(
+        IReadOnlyList<ModInfo> failed,
+        Harmony harmony,
+        IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)
+    {
+        var pending = failed.ToList();
+        var hasContent = overlays.Count > 0;
+        new Thread(() =>
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            if (hasContent)
+            {
+                while (DateTime.UtcNow < deadline)
+                {
+                    var loaded = AppDomain.CurrentDomain
+                        .GetAssemblies()
+                        .Select(assembly => assembly.GetName().Name ?? "")
+                        .ToHashSet(StringComparer.Ordinal);
+                    if (loaded.Contains("Content.Client") && loaded.Contains("Content.Shared"))
+                        break;
+
+                    Thread.Sleep(400);
+                }
+            }
+
+            var retried = ApplyModList(pending, harmony);
+            foreach (var mod in retried)
+            {
+                Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: патчи не применились");
+            }
+        })
+        {
+            IsBackground = true,
+        }.Start();
+    }
+
+    private static int RunScanMods(string dir)
+    {
+        if (!Directory.Exists(dir))
+        {
+            Console.Error.WriteLine("scan-mods: каталог не найден");
+            return 1;
+        }
+
+        var dlls = Directory.GetFiles(dir, "*.dll")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (dlls.Count == 0)
+        {
+            Console.WriteLine("[]");
+            return 0;
+        }
+
+        var results = new List<object>();
+        foreach (var dll in dlls)
+        {
+            var context = new AssemblyLoadContext(
+                $"illusio-scan-{Path.GetFileName(dll)}",
+                isCollectible: true);
+            try
+            {
+                using var stream = File.OpenRead(dll);
+                var assembly = context.LoadFromStream(stream);
+                var type = FindMarker(assembly);
+                if (type == null)
+                    continue;
+
+                var name = ReadMarkerString(type, "Name") ?? "";
+                var description = ReadMarkerString(type, "Description") ?? "";
+                var version = assembly.GetName().Version?.ToString() ?? "";
+                results.Add(new
+                {
+                    file = Path.GetFileName(dll),
+                    name,
+                    description,
+                    version,
+                });
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"scan-mods: {Path.GetFileName(dll)}: {e.Message}");
+            }
+            finally
+            {
+                context.Unload();
+            }
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(
+            results,
+            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+        return 0;
     }
 
     private static List<(ZipFileApi Api, ZipArchive Archive)> ParseOverlayZips(string raw)
@@ -152,6 +382,11 @@ internal class Program
     [STAThread]
     internal static int Main(string[] args)
     {
+        if (args.Length >= 2 && args[0] == "scan-mods")
+        {
+            return RunScanMods(args[1]);
+        }
+
         if (args.Length < 3)
         {
             Console.WriteLine("Usage: illusio-loader <robustPath> <signature> <public key> [engineArg [engineArg...]]");

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/strings.dart';
 import '../../models/hub_server.dart';
 import '../../models/server.dart';
 import '../../models/server_info.dart';
@@ -71,6 +72,7 @@ class _ServersScreenState extends State<ServersScreen> {
     return ListenableBuilder(
       listenable: Listenable.merge([widget.controller, _search]),
       builder: (context, _) {
+        final s = S.of(context);
         final controller = widget.controller;
         final query = _search.text.trim().toLowerCase();
         final servers = controller.hubServers.where((server) {
@@ -130,14 +132,14 @@ class _ServersScreenState extends State<ServersScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Сервера',
+                              s.serversTitle,
                               style: Theme.of(context).textTheme.headlineLarge,
                             ),
                             const SizedBox(height: 4),
                             Text(
                               controller.hubError.isEmpty
-                                  ? '${servers.length} из ${controller.hubServers.length} серверов · $totalPlayers игроков онлайн'
-                                  : 'список не обновлён',
+                                  ? s.serversCount(servers.length, controller.hubServers.length, totalPlayers)
+                                  : s.listNotUpdated,
                               style: Theme.of(context)
                                   .textTheme
                                   .bodyMedium
@@ -156,7 +158,7 @@ class _ServersScreenState extends State<ServersScreen> {
                               controller.filterMaxPlayers > 0,
                           child: const Icon(Icons.tune, size: 22),
                         ),
-                        tooltip: 'Фильтры',
+                        tooltip: s.filters,
                       ),
                       const SizedBox(width: 8),
                       IconButton.filledTonal(
@@ -171,7 +173,7 @@ class _ServersScreenState extends State<ServersScreen> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.refresh, size: 22),
-                        tooltip: 'Обновить',
+                        tooltip: s.refresh,
                       ),
                     ],
                   ),
@@ -179,8 +181,8 @@ class _ServersScreenState extends State<ServersScreen> {
                   TextField(
                     controller: _search,
                     decoration: illusioInput(
-                      'Поиск',
-                      hint: 'имя или адрес сервера',
+                      s.search,
+                      hint: s.searchHint,
                       prefixIcon: const Icon(Icons.search, size: 22),
                     ),
                   ),
@@ -219,7 +221,7 @@ class _ServersScreenState extends State<ServersScreen> {
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(
-              'Получаем список серверов',
+              S.of(context).loadingList,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -356,7 +358,9 @@ class _ServerTile extends StatelessWidget {
                     size: 20,
                   ),
                   color: favorite ? scheme.primary : scheme.onSurfaceVariant,
-                  tooltip: favorite ? 'Убрать из избранного' : 'В избранное',
+                  tooltip: favorite
+                      ? S.of(context).removeFavorite
+                      : S.of(context).addFavorite,
                 ),
                 connecting
                     ? const Padding(
@@ -369,7 +373,7 @@ class _ServerTile extends StatelessWidget {
                       )
                     : FilledButton.tonal(
                         onPressed: onConnect,
-                        child: const Text('Играть'),
+                        child: Text(S.of(context).play),
                       ),
               ],
             ),
@@ -398,7 +402,9 @@ class _PingDot extends StatelessWidget {
         ? scheme.outlineVariant
         : colors[value.quality.clamp(0, 2)];
     return Tooltip(
-      message: value == null ? 'пинг не измерен' : 'пинг ${value.label}',
+      message: value == null
+          ? S.of(context).pingUnmeasured
+          : S.of(context).pingLabel(value.label(S.of(context))),
       child: Container(
         width: 10,
         height: 10,
@@ -494,7 +500,7 @@ class _HubError extends StatelessWidget {
             Icon(Icons.cloud_off, size: 44, color: scheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
-              'Хаб недоступен',
+              S.of(context).hubUnavailable,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
@@ -509,7 +515,7 @@ class _HubError extends StatelessWidget {
             FilledButton.tonalIcon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, size: 20),
-              label: const Text('Повторить'),
+              label: Text(S.of(context).retry),
             ),
           ],
         ),
@@ -557,7 +563,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
       if (result['ok'] == true) {
         _status = ServerStatusInfo.fromMap(result['status']);
       } else {
-        _error = result['error']?.toString() ?? 'сервер не отвечает';
+        _error = result['error']?.toString() ?? S.of(context).serverNotResponding;
       }
     });
   }
@@ -607,7 +613,9 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                     size: 22,
                   ),
                   color: favorite ? scheme.primary : scheme.onSurfaceVariant,
-                  tooltip: favorite ? 'Убрать из избранного' : 'В избранное',
+                  tooltip: favorite
+                      ? S.of(context).removeFavorite
+                      : S.of(context).addFavorite,
                 ),
               ],
             ),
@@ -628,10 +636,10 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                   label: server.playersLabel,
                   tone: _ChipTone.neutral,
                 ),
-                if (server.runLevelLabel.isNotEmpty)
+                if (server.runLevelLabel(S.of(context)).isNotEmpty)
                   _InfoChip(
                     icon: Icons.timelapse,
-                    label: server.runLevelLabel,
+                    label: server.runLevelLabel(S.of(context)),
                     tone: _ChipTone.neutral,
                   ),
                 if (server.preset.isNotEmpty)
@@ -642,7 +650,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                 if (server.roundId > 0)
                   _InfoChip(
                     icon: Icons.tag,
-                    label: 'Раунд ${server.roundId}',
+                    label: '${S.of(context).round} ${server.roundId}',
                   ),
                 for (final tag in server.tags)
                   _InfoChip(icon: Icons.label_outline, label: _tagLabel(tag)),
@@ -681,7 +689,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Text(
-                  'не удалось получить /info: $_infoError',
+                  S.of(context).infoFailed(_infoError),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -696,7 +704,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
               )
             else if (_error.isNotEmpty)
               Text(
-                'Не удалось получить описание: $_error',
+                S.of(context).detailsFailed(_error),
                 style:
                     theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
               )
@@ -712,7 +720,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                 widget.onConnect();
               },
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Подключиться'),
+              label: Text(S.of(context).connect),
             ),
           ],
         ),
@@ -744,23 +752,25 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
   }
 
   String _tagLabel(String raw) {
-    const regions = {
-      'eu_e': 'Европа (восток)',
-      'eu_w': 'Европа (запад)',
-      'as_e': 'Азия (восток)',
-      'as_n': 'Азия (север)',
-      'as_se': 'Азия (юго-восток)',
-      'am_n_e': 'Северная Америка (восток)',
-      'am_n_w': 'Северная Америка (запад)',
-      'am_n_c': 'Северная Америка (центр)',
-      'am_c': 'Центральная Америка',
-      'oce': 'Океания',
+    const regionKeys = {
+      'eu_e': 'eu_east',
+      'eu_w': 'eu_west',
+      'as_e': 'asia_east',
+      'as_n': 'asia_north',
+      'as_se': 'asia_se',
+      'am_n_e': 'na_east',
+      'am_n_w': 'na_west',
+      'am_n_c': 'na_central',
+      'am_c': 'sa_central',
+      'oce': 'oceania',
     };
+    final s = S.of(context);
     if (raw.startsWith('region:')) {
-      return regions[raw.substring('region:'.length)] ?? raw;
+      final value = raw.substring('region:'.length);
+      return '${s.regionPrefix}${s.regionName(regionKeys[value] ?? value)}';
     }
     if (raw.startsWith('lang:')) {
-      return 'Язык: ${raw.substring('lang:'.length)}';
+      return '${s.langPrefix}${raw.substring('lang:'.length)}';
     }
     if (raw.startsWith('rp:')) {
       return 'RP: ${raw.substring('rp:'.length)}';
@@ -870,6 +880,7 @@ class _FilterSheetState extends State<_FilterSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final s = S.of(context);
     final controller = widget.controller;
     final available = ServerTagInfo.availableFilters(controller.hubServers);
     final selected = List<String>.from(controller.filterTags);
@@ -880,10 +891,11 @@ class _FilterSheetState extends State<_FilterSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Фильтры серверов', style: theme.textTheme.headlineSmall),
+              Text(S.of(context).filtersTitle,
+                  style: theme.textTheme.headlineSmall),
               const SizedBox(height: 4),
               Text(
-                'внутри категории фильтры складываются «или», между категориями — «и»',
+                s.filtersHint,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -896,7 +908,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   for (final filter in available)
                     FilterChip(
                       selected: selected.contains(filter),
-                      label: Text(ServerTagInfo.filterLabel(filter)),
+                      label: Text(ServerTagInfo.filterLabel(filter, S.of(context))),
                       onSelected: (value) {
                         setState(() {
                           if (value) {
@@ -917,7 +929,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                     child: TextField(
                       controller: _min,
                       keyboardType: TextInputType.number,
-                      decoration: illusioInput('Игроков от', hint: '0'),
+                      decoration: illusioInput(S.of(context).playersFrom, hint: '0'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -925,7 +937,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                     child: TextField(
                       controller: _max,
                       keyboardType: TextInputType.number,
-                      decoration: illusioInput('Игроков до', hint: '∞'),
+                      decoration: illusioInput(S.of(context).playersTo, hint: '∞'),
                     ),
                   ),
                 ],
@@ -935,7 +947,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Скрывать полные сервера',
+                      S.of(context).hideFullServers,
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
@@ -956,14 +968,14 @@ class _FilterSheetState extends State<_FilterSheet> {
                         controller.setHideFull(false);
                         Navigator.of(context).pop();
                       },
-                      child: const Text('Сбросить'),
+                      child: Text(S.of(context).reset),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
                       onPressed: _apply,
-                      child: const Text('Готово'),
+                      child: Text(s.done),
                     ),
                   ),
                 ],
