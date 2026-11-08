@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
@@ -29,16 +30,7 @@ class AppController extends ChangeNotifier {
   bool loginBusy = false;
   String loginError = '';
 
-  DownloadStateInfo downloadState = const DownloadStateInfo(
-    phase: 'idle',
-    downloaded: 0,
-    total: 0,
-    message: '',
-    error: '',
-    running: false,
-    installDir: '',
-    info: null,
-  );
+  DownloadStateInfo downloadState = DownloadStateInfo.empty;
   bool connecting = false;
 
   Future<void> _loadConfig() async {
@@ -186,16 +178,7 @@ class AppController extends ChangeNotifier {
       return {'ok': false, 'error': 'подключение уже идёт'};
     }
     connecting = true;
-    downloadState = const DownloadStateInfo(
-      phase: 'info',
-      downloaded: 0,
-      total: 0,
-      message: 'Получаем данные сервера',
-      error: '',
-      running: true,
-      installDir: '',
-      info: null,
-    );
+    downloadState = DownloadStateInfo.empty;
     notifyListeners();
 
     final payload = jsonEncode({
@@ -213,6 +196,10 @@ class AppController extends ChangeNotifier {
         error: started['error']?.toString() ?? 'не удалось начать загрузку',
         running: false,
         installDir: '',
+        mode: '',
+        engineZip: '',
+        contentZip: '',
+        engineSig: '',
         info: null,
       );
       notifyListeners();
@@ -243,10 +230,17 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  String get loaderDir {
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final separator = Platform.isWindows ? '\\' : '/';
+    return '$exeDir${separator}loader';
+  }
+
   Future<Map<String, dynamic>> _launchAfterDownload(GameServer server) async {
     final info = downloadState.info;
     final current = login;
     final authAllowed = info?.authUsable == true;
+    final acz = downloadState.isAcz;
     final spec = jsonEncode({
       'install_dir': downloadState.installDir,
       'args': launchArgs,
@@ -262,6 +256,11 @@ class AppController extends ChangeNotifier {
       'build_fork_id': info?.build.forkId ?? '',
       'build_hash': info?.build.hash ?? '',
       'build_engine_version': info?.build.engineVersion ?? '',
+      'mode': acz ? 'acz' : 'zip',
+      'loader_dir': acz ? loaderDir : '',
+      'engine_zip': acz ? downloadState.engineZip : '',
+      'content_zip': acz ? downloadState.contentZip : '',
+      'engine_sig': acz ? downloadState.engineSig : '',
     });
     final result = await Isolate.run(() => Core.launch(spec));
     if (result['ok'] != true) {

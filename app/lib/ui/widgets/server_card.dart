@@ -251,7 +251,9 @@ class _DownloadBody extends StatelessWidget {
     final theme = Theme.of(context);
     final failed = state.isError;
     final color = failed ? errorClay : mutedFog;
-    final showBar = state.phase == 'download' || state.phase == 'extract';
+    final showBar = state.phase == 'engine' ||
+        state.phase == 'download' ||
+        state.phase == 'extract';
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Column(

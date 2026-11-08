@@ -42,6 +42,10 @@ void main() {
       error: '',
       running: true,
       installDir: '',
+      mode: 'acz',
+      engineZip: '/data/engine.zip',
+      contentZip: '/data/content.zip',
+      engineSig: 'sig',
       info: null,
     );
     expect(state.progress, closeTo(0.5, 0.001));
@@ -50,6 +54,26 @@ void main() {
     expect(state.phaseLabel, 'Загружаем клиент');
     expect(state.isDone, isFalse);
     expect(state.isError, isFalse);
+    expect(state.isAcz, isTrue);
+  });
+
+  test('engine phase shows dedicated label', () {
+    const state = DownloadStateInfo(
+      phase: 'engine',
+      downloaded: 0,
+      total: 0,
+      message: '',
+      error: '',
+      running: true,
+      installDir: '',
+      mode: 'acz',
+      engineZip: '',
+      contentZip: '',
+      engineSig: '',
+      info: null,
+    );
+    expect(state.phaseLabel, 'Загружаем движок');
+    expect(state.progress, isNull);
   });
 
   test('download state without total has indeterminate progress', () {
@@ -61,9 +85,36 @@ void main() {
       error: '',
       running: true,
       installDir: '',
+      mode: 'zip',
+      engineZip: '',
+      contentZip: '',
+      engineSig: '',
       info: null,
     );
     expect(state.progress, isNull);
+    expect(state.isAcz, isFalse);
+  });
+
+  test('state parses acz fields from core payload', () {
+    final state = DownloadStateInfo.fromMap({
+      'phase': 'done',
+      'downloaded': 12,
+      'total': 12,
+      'message': 'клиент готов',
+      'error': '',
+      'running': false,
+      'install_dir': '/data/client/fork',
+      'mode': 'acz',
+      'engineZip': '/data/engine/240.zip',
+      'contentZip': '/data/client/fork/content.zip',
+      'engineSig': 'aabb',
+      'info': null,
+    });
+    expect(state.isDone, isTrue);
+    expect(state.isAcz, isTrue);
+    expect(state.engineZip, '/data/engine/240.zip');
+    expect(state.contentZip, '/data/client/fork/content.zip');
+    expect(state.engineSig, 'aabb');
   });
 
   test('login info parses and roundtrips', () {

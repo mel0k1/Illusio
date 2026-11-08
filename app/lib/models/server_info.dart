@@ -75,6 +75,10 @@ class DownloadStateInfo {
     required this.error,
     required this.running,
     required this.installDir,
+    required this.mode,
+    required this.engineZip,
+    required this.contentZip,
+    required this.engineSig,
     required this.info,
   });
 
@@ -85,11 +89,17 @@ class DownloadStateInfo {
   final String error;
   final bool running;
   final String installDir;
+  final String mode;
+  final String engineZip;
+  final String contentZip;
+  final String engineSig;
   final ServerFullInfo? info;
 
   bool get isDone => phase == 'done';
 
   bool get isError => phase == 'error';
+
+  bool get isAcz => mode == 'acz';
 
   double? get progress {
     if (total <= 0) {
@@ -120,6 +130,8 @@ class DownloadStateInfo {
     switch (phase) {
       case 'info':
         return message.isEmpty ? 'Получаем данные сервера' : message;
+      case 'engine':
+        return message.isEmpty ? 'Загружаем движок' : message;
       case 'download':
         return 'Загружаем клиент';
       case 'extract':
@@ -133,18 +145,24 @@ class DownloadStateInfo {
     }
   }
 
+  static const DownloadStateInfo empty = DownloadStateInfo(
+    phase: 'idle',
+    downloaded: 0,
+    total: 0,
+    message: '',
+    error: '',
+    running: false,
+    installDir: '',
+    mode: '',
+    engineZip: '',
+    contentZip: '',
+    engineSig: '',
+    info: null,
+  );
+
   static DownloadStateInfo fromMap(Object? raw) {
     if (raw is! Map) {
-      return const DownloadStateInfo(
-        phase: 'idle',
-        downloaded: 0,
-        total: 0,
-        message: '',
-        error: '',
-        running: false,
-        installDir: '',
-        info: null,
-      );
+      return empty;
     }
     return DownloadStateInfo(
       phase: raw['phase']?.toString() ?? 'idle',
@@ -154,6 +172,10 @@ class DownloadStateInfo {
       error: raw['error']?.toString() ?? '',
       running: raw['running'] == true,
       installDir: raw['install_dir']?.toString() ?? '',
+      mode: raw['mode']?.toString() ?? '',
+      engineZip: raw['engineZip']?.toString() ?? '',
+      contentZip: raw['contentZip']?.toString() ?? '',
+      engineSig: raw['engineSig']?.toString() ?? '',
       info: ServerFullInfo.fromMap(raw['info']),
     );
   }
