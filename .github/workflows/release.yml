@@ -88,6 +88,15 @@ jobs:
             cp -r "${{ env.LOADER_OUT }}" build/macos/Build/Products/Release/illusio.app/Contents/MacOS/loader
           fi
 
+      - name: Build NSIS installer
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { choco install nsis -y }
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          & $makensis "/DVERSION=$version" "/DSRCDIR=$env:GITHUB_WORKSPACE\app\build\windows\x64\runner\Release" "/DOUTDIR=$env:GITHUB_WORKSPACE" "/DLICENSE=$env:GITHUB_WORKSPACE\LICENSE" "/DICONDIR=$env:GITHUB_WORKSPACE\app\installer" "installer\illusio.nsi"
+
       - name: Package
         shell: bash
         run: |
@@ -106,6 +115,7 @@ jobs:
           path: |
             Illusio-*.zip
             Illusio-*.tar.gz
+            Illusio-*.exe
           if-no-files-found: error
 
       - name: Attach to release
@@ -115,4 +125,5 @@ jobs:
           files: |
             Illusio-*.zip
             Illusio-*.tar.gz
+            Illusio-*.exe
           generate_release_notes: true
