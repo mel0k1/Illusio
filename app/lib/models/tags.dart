@@ -1,78 +1,56 @@
 import 'hub_server.dart';
 
-const List<String> knownLanguages = [
-  'en',
-  'ru',
-  'de',
-  'fr',
-  'es',
-  'pt',
-  'uk',
-  'be',
-  'pl'
-];
-const List<String> knownRegions = ['eu', 'am', 'as', 'au'];
-const List<String> knownRpLevels = ['nrp', 'lrp', 'mrp', 'hrp'];
-
 class ServerTagInfo {
   const ServerTagInfo._();
 
-  static final RegExp _langPattern = RegExp(
-    r'\[(EN|RU|DE|FR|ES|PT|UK|BE|PL)\]',
-    caseSensitive: false,
-  );
-  static final RegExp _adultPattern = RegExp(r'\[18\+\]', caseSensitive: false);
-  static final RegExp _whitelistPattern =
-      RegExp(r'\[(WL|WHITELIST)\]', caseSensitive: false);
-  static final RegExp _rpPattern = RegExp(
-    r'\[(NRP|LRP|MRP|HRP)\]',
-    caseSensitive: false,
-  );
-  static final RegExp _regionPattern = RegExp(
-    r'\[(EU|AM|AS|AU)\]',
-    caseSensitive: false,
-  );
-
-  static String _allMatches(RegExp pattern, String name) {
-    return pattern
-        .allMatches(name)
-        .map((match) => match.group(1) ?? '')
-        .firstWhere((value) => value.isNotEmpty, orElse: () => '')
-        .toLowerCase();
-  }
+  static final RegExp _bracketTags = RegExp(r'\[(.*?)\]');
 
   static List<String> infer(HubServer server) {
     final tags = <String>{};
-    var inferFromName = true;
+    var noInfer = false;
     for (final tag in server.tags) {
       final clean = tag.trim().toLowerCase();
-      if (clean.isEmpty || clean == 'no_tag_infer') {
-        if (clean == 'no_tag_infer') {
-          inferFromName = false;
-        }
+      if (clean.isEmpty) {
         continue;
+      }
+      if (clean == 'no_tag_infer') {
+        noInfer = true;
       }
       tags.add(clean);
     }
-    if (inferFromName) {
-      final name = server.name;
-      final lang = _allMatches(_langPattern, name);
-      if (lang.isNotEmpty) {
-        tags.add('lang:$lang');
+    if (noInfer) {
+      return tags.where((tag) => tag != 'no_tag_infer').toList()..sort();
+    }
+    final bracket = _bracketTags
+        .allMatches(server.name)
+        .map((match) => (match.group(1) ?? '').trim().toLowerCase())
+        .toSet();
+    final hasLang = tags.any((tag) => tag.startsWith('lang:'));
+    if (!hasLang) {
+      if (bracket.contains('en')) {
+        tags.add('lang:en');
+      } else if (bracket.contains('ru') || bracket.contains('rus')) {
+        tags.add('lang:ru');
       }
-      final region = _allMatches(_regionPattern, name);
-      if (region.isNotEmpty) {
-        tags.add('region:$region');
-      }
-      final rp = _allMatches(_rpPattern, name);
-      if (rp.isNotEmpty) {
-        tags.add('rp:$rp');
-      }
-      if (_adultPattern.hasMatch(name)) {
+    }
+    if (!tags.contains('18+')) {
+      if (bracket.contains('18+') ||
+          bracket.contains('+18') ||
+          bracket.contains('18') ||
+          bracket.contains('erp')) {
         tags.add('18+');
       }
-      if (_whitelistPattern.hasMatch(name)) {
-        tags.add('wl');
+    }
+    final hasRp = tags.any((tag) => tag.startsWith('rp:'));
+    if (!hasRp) {
+      if (bracket.contains('nrp')) {
+        tags.add('rp:none');
+      } else if (bracket.contains('lrp')) {
+        tags.add('rp:low');
+      } else if (bracket.contains('mrp')) {
+        tags.add('rp:medium');
+      } else if (bracket.contains('hrp')) {
+        tags.add('rp:high');
       }
     }
     return tags.toList()..sort();
@@ -104,9 +82,24 @@ class ServerTagInfo {
       case 'region':
         return 'Регион: ${value.toUpperCase()}';
       case 'rp':
-        return 'RP: ${value.toUpperCase()}';
+        return 'RP: ${rpLabel(value)}';
       default:
         return filter;
+    }
+  }
+
+  static String rpLabel(String value) {
+    switch (value) {
+      case 'none':
+        return 'нет';
+      case 'low':
+        return 'лёгкий';
+      case 'medium':
+        return 'средний';
+      case 'high':
+        return 'тяжёлый';
+      default:
+        return value.toUpperCase();
     }
   }
 

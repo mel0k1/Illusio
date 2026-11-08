@@ -56,13 +56,13 @@ void main() {
   test('server tags infer from name', () {
     final server = HubServer.fromMap({
       'address': 'ss14://example.com',
-      'name': '[RU] [18+] LRP Example',
+      'name': '[RU] [18+] [LRP] Example',
       'players': 10,
     });
     final tags = ServerTagInfo.infer(server);
     expect(tags, contains('lang:ru'));
     expect(tags, contains('18+'));
-    expect(tags, contains('rp:lrp'));
+    expect(tags, contains('rp:low'));
   });
 
   test('server tags respect explicit values and no_tag_infer', () {
@@ -89,6 +89,7 @@ void main() {
     expect(ServerTagInfo.categoryOf('18+'), '18+');
     expect(ServerTagInfo.categoryOf('wl'), 'wl');
     expect(ServerTagInfo.filterLabel('lang:ru'), 'Язык: RU');
+    expect(ServerTagInfo.filterLabel('rp:low'), 'RP: лёгкий');
     expect(ServerTagInfo.filterLabel('wl'), 'Вайтлист');
   });
 
