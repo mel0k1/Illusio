@@ -38,6 +38,16 @@ pub struct LaunchSpec {
     pub build_manifest_download_url: String,
     #[serde(default)]
     pub build_manifest_hash: String,
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub loader_dir: String,
+    #[serde(default)]
+    pub engine_zip: String,
+    #[serde(default)]
+    pub content_zip: String,
+    #[serde(default)]
+    pub engine_sig: String,
 }
 
 pub fn client_path(install_dir: &str) -> PathBuf {
@@ -127,7 +137,19 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     env
 }
 
+pub fn loader_path(loader_dir: &str) -> PathBuf {
+    let dir = PathBuf::from(loader_dir);
+    if cfg!(windows) {
+        dir.join("illusio-loader.exe")
+    } else {
+        dir.join("illusio-loader")
+    }
+}
+
 pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
+    if spec.mode.trim().eq_ignore_ascii_case("acz") {
+        return launch_loader(spec);
+    }
     let path = client_path(&spec.install_dir);
     if !path.exists() {
         return Err(format!("клиент не найден: {}", path.display()));
@@ -137,6 +159,47 @@ pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
         .args(build_args(spec))
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    for (key, value) in build_env(spec) {
+        command.env(key, value);
+    }
+    let child = command
+        .spawn()
+        .map_err(|error| format!("не удалось запустить клиент: {error}"))?;
+    Ok(child.id())
+}
+
+fn launch_loader(spec: &LaunchSpec) -> Result<u32, String> {
+    let loader = loader_path(&spec.loader_dir);
+    if !loader.exists() {
+        return Err(
+            "loader не найден: он входит в готовые сборки Illusio из раздела Releases".into(),
+        );
+    }
+    let engine_zip = PathBuf::from(&spec.engine_zip);
+    if !engine_zip.exists() {
+        return Err("архив движка не найден, повторите подключение".into());
+    }
+    let content_zip = PathBuf::from(&spec.content_zip);
+    if !content_zip.exists() {
+        return Err("файлы сборки не найдены, повторите подключение".into());
+    }
+    let pubkey = PathBuf::from(&spec.loader_dir).join("signing_key");
+    if !pubkey.exists() {
+        return Err("ключ подписи движков не найден рядом с loader".into());
+    }
+    let sig = spec.engine_sig.trim();
+    if sig.is_empty() {
+        return Err("у сборки движка нет подписи".into());
+    }
+    let mut command = Command::new(&loader);
+    command
+        .arg(&engine_zip)
+        .arg(sig)
+        .arg(&pubkey)
+        .args(build_args(spec))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command.env("SS14_LOADER_OVERLAY_ZIP", &content_zip);
     for (key, value) in build_env(spec) {
         command.env(key, value);
     }
@@ -228,5 +291,13 @@ mod tests {
             "ROBUST_AUTH_SERVER".into(),
             "https://auth.spacestation14.com/".into()
         )));
+    }
+
+    #[test]
+    fn loader_launch_requires_files() {
+        let mut spec = spec();
+        spec.mode = "acz".into();
+        spec.loader_dir = "/nonexistent/loader".into();
+        assert!(launch(&spec).is_err());
     }
 }

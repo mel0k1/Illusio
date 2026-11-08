@@ -7,6 +7,9 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
+use crate::acz;
+use crate::engine;
+
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -126,6 +129,12 @@ pub struct StoredBuild {
     pub fork_id: String,
     #[serde(default)]
     pub hash: String,
+    #[serde(default, rename = "manifestHash")]
+    pub manifest_hash: String,
+    #[serde(default, rename = "engineVersion")]
+    pub engine_version: String,
+    #[serde(default)]
+    pub acz: bool,
 }
 
 pub fn marker_path(dir: &Path) -> PathBuf {
@@ -143,6 +152,15 @@ pub fn write_marker(dir: &Path, build: &StoredBuild) -> Result<(), String> {
 }
 
 fn build_matches(stored: &StoredBuild, build: &ServerBuild) -> bool {
+    if stored.acz {
+        let manifest_hash = build.manifest_hash.trim().to_ascii_lowercase();
+        if !manifest_hash.is_empty() {
+            return stored
+                .manifest_hash
+                .trim()
+                .eq_ignore_ascii_case(&manifest_hash);
+        }
+    }
     let server_hash = build.hash.trim().to_ascii_lowercase();
     if !server_hash.is_empty() {
         return stored.hash.trim().eq_ignore_ascii_case(&server_hash);
@@ -207,6 +225,13 @@ pub struct DownloadState {
     pub error: String,
     pub running: bool,
     pub install_dir: String,
+    pub mode: String,
+    #[serde(rename = "engineZip")]
+    pub engine_zip: String,
+    #[serde(rename = "contentZip")]
+    pub content_zip: String,
+    #[serde(rename = "engineSig")]
+    pub engine_sig: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub info: Option<ServerInfo>,
 }
@@ -317,12 +342,222 @@ fn execute(
         }
     }
 
+    let use_acz = build.acz
+        && !build.manifest_url.trim().is_empty()
+        && !build.manifest_download_url.trim().is_empty();
+    if use_acz {
+        match run_acz(&build, &root, &target) {
+            Ok(payload) => {
+                write_marker(
+                    &target,
+                    &StoredBuild {
+                        version: build.version.clone(),
+                        fork_id: build.fork_id.clone(),
+                        hash: build.hash.clone(),
+                        manifest_hash: payload.manifest_hash.clone(),
+                        engine_version: build.engine_version.clone(),
+                        acz: true,
+                    },
+                )?;
+                set_state(|state| {
+                    state.mode = "acz".into();
+                    state.engine_zip = payload.engine_zip.display().to_string();
+                    state.content_zip = payload.content_zip.display().to_string();
+                    state.engine_sig = payload.engine_sig.clone();
+                });
+                return Ok((target, info, payload.message));
+            }
+            Err(acz_error) => {
+                if build.download_url.trim().is_empty() {
+                    return Err(acz_error);
+                }
+                let zip_result = run_zip(&build, &root, &target);
+                match zip_result {
+                    Ok(message) => {
+                        write_marker(
+                            &target,
+                            &StoredBuild {
+                                version: build.version.clone(),
+                                fork_id: build.fork_id.clone(),
+                                hash: build.hash.clone(),
+                                acz: false,
+                                ..StoredBuild::default()
+                            },
+                        )?;
+                        set_state(|state| {
+                            state.mode = "zip".into();
+                        });
+                        return Ok((target, info, message));
+                    }
+                    Err(zip_error) => {
+                        return Err(format!(
+                            "{acz_error}; загрузка zip тоже не удалась: {zip_error}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let message = run_zip(&build, &root, &target)?;
+    write_marker(
+        &target,
+        &StoredBuild {
+            version: build.version.clone(),
+            fork_id: build.fork_id.clone(),
+            hash: build.hash.clone(),
+            acz: false,
+            ..StoredBuild::default()
+        },
+    )?;
+    set_state(|state| {
+        state.mode = "zip".into();
+    });
+    Ok((target, info, message))
+}
+
+struct AczPayload {
+    manifest_hash: String,
+    engine_zip: PathBuf,
+    content_zip: PathBuf,
+    engine_sig: String,
+    message: String,
+}
+
+fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload, String> {
+    let engine_version = build.engine_version.trim();
+    if engine_version.is_empty() {
+        return Err("сервер не указал версию движка".into());
+    }
+
+    set_state(|state| {
+        state.phase = "engine".into();
+        state.message = format!("получаем движок {engine_version}");
+        state.downloaded = 0;
+        state.total = 0;
+    });
+    let manifest = engine::fetch_engine_manifest()?;
+    let (resolved_version, rid, platform) = engine::find_engine(&manifest, engine_version)?;
+    let engine_root = root.join("engine");
+    fs::create_dir_all(&engine_root).map_err(|error| error.to_string())?;
+    let engine_zip = engine::engine_cache_path(&engine_root, &resolved_version, rid);
+    let engine_fresh = engine::verify_engine_zip(&engine_zip, &platform.sha256)?;
+    if !engine_fresh {
+        let temp_name = engine_zip
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "engine.zip".into());
+        let engine_temp = engine_root.join(format!("{temp_name}.tmp"));
+        set_state(|state| {
+            state.phase = "engine".into();
+            state.message = format!("загружаем движок {resolved_version}");
+            state.downloaded = 0;
+            state.total = 0;
+        });
+        download_to(&platform.url, &engine_temp)?;
+        let digest = sha256_file(&engine_temp)?;
+        if !digest.eq_ignore_ascii_case(platform.sha256.trim()) {
+            fs::remove_file(&engine_temp).ok();
+            return Err("хэш движка не совпал".into());
+        }
+        fs::rename(&engine_temp, &engine_zip).map_err(|error| error.to_string())?;
+    }
+    let engine_sig = platform.sig.trim().to_string();
+    if engine_sig.is_empty() {
+        return Err("у сборки движка нет подписи".into());
+    }
+
+    set_state(|state| {
+        state.phase = "download".into();
+        state.message = "читаем манифест контента".into();
+        state.downloaded = 0;
+        state.total = 0;
+    });
+    let (entries, manifest_hash) = acz::fetch_manifest(&build.manifest_url)?;
+    let server_manifest_hash = build.manifest_hash.trim().to_ascii_lowercase();
+    if !server_manifest_hash.is_empty()
+        && !manifest_hash.eq_ignore_ascii_case(&server_manifest_hash)
+    {
+        return Err("хэш манифеста контента не совпал".into());
+    }
+
+    let fork_name = acz::sanitize_dir_name(&build.fork_id);
+    let blobs = acz::blobs_dir(&cache_root()?, &fork_name);
+    let missing: Vec<acz::ManifestEntry> = acz::unique_entries(&entries)
+        .into_iter()
+        .filter(|entry| {
+            let path = blobs.join(format!("{}.bin", entry.hash_hex));
+            !fs::metadata(&path)
+                .map(|meta| meta.len() > 0)
+                .unwrap_or(false)
+        })
+        .collect();
+    let total_unique = acz::unique_entries(&entries).len();
+    let fresh = total_unique - missing.len();
+
+    if !missing.is_empty() {
+        let client = download_client()?;
+        let mut done_files = fresh as u64;
+        acz::check_download_protocol(&client, &build.manifest_download_url)?;
+        set_state(|state| {
+            state.phase = "download".into();
+            state.message = "загружаем файлы сборки".into();
+            state.downloaded = 0;
+            state.total = 0;
+        });
+        acz::download_blobs(&client, &build.manifest_download_url, &missing, |blob| {
+            acz::write_blob_cache(&blobs, &blob.hash_hex, &blob.data)?;
+            done_files += 1;
+            let current_files = done_files;
+            set_state(|state| {
+                state.downloaded = current_files;
+                state.total = total_unique as u64;
+                state.message = format!("загружаем файлы {current_files}/{total_unique}");
+            });
+            Ok(())
+        })?;
+    } else {
+        set_state(|state| {
+            state.phase = "download".into();
+            state.downloaded = total_unique as u64;
+            state.total = total_unique as u64;
+            state.message = "все файлы уже в кэше".into();
+        });
+    }
+
+    set_state(|state| {
+        state.phase = "extract".into();
+        state.message = "собираем клиент".into();
+        state.downloaded = 0;
+        state.total = 0;
+    });
+    fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    let content_zip = target.join("content.zip");
+    acz::assemble_overlay_zip(&entries, &blobs, &content_zip, |done| {
+        set_state(|state| state.downloaded = done);
+    })?;
+
+    Ok(AczPayload {
+        manifest_hash,
+        engine_zip,
+        content_zip,
+        engine_sig,
+        message: "клиент готов".into(),
+    })
+}
+
+fn cache_root() -> Result<PathBuf, String> {
+    dirs::cache_dir()
+        .map(|dir| dir.join("illusio"))
+        .ok_or_else(|| "не удалось определить каталог кэша".into())
+}
+
+fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, String> {
     if build.download_url.trim().is_empty() {
         return Err("сервер не даёт ссылку на загрузку клиента".into());
     }
-
     let temp_file = root.join(format!("illusio-{}.zip.tmp", std::process::id()));
-    let candidates = zip_candidates(&build);
+    let candidates = zip_candidates(build);
     if candidates.is_empty() {
         return Err("сервер не даёт ссылку на загрузку клиента".into());
     }
@@ -370,21 +605,12 @@ fn execute(
     });
 
     if target.exists() {
-        fs::remove_dir_all(&target).map_err(|error| error.to_string())?;
+        fs::remove_dir_all(target).map_err(|error| error.to_string())?;
     }
-    extract_zip(&zip_path, &target)?;
+    extract_zip(&zip_path, target)?;
     fs::remove_file(&zip_path).ok();
 
-    write_marker(
-        &target,
-        &StoredBuild {
-            version: build.version.clone(),
-            fork_id: build.fork_id.clone(),
-            hash: build.hash.clone(),
-        },
-    )?;
-
-    Ok((target, info, "клиент готов".into()))
+    Ok("клиент готов".into())
 }
 
 fn sanitize_component(value: &str) -> String {
@@ -513,11 +739,17 @@ mod tests {
             version: "240.1".into(),
             fork_id: "space_wizards".into(),
             hash: "abcd".into(),
+            manifest_hash: "feed".into(),
+            engine_version: "240.1.0.5".into(),
+            acz: true,
         };
         write_marker(&dir, &build).unwrap();
         let read = read_marker(&dir).unwrap();
         assert_eq!(read.version, "240.1");
         assert_eq!(read.hash, "abcd");
+        assert_eq!(read.manifest_hash, "feed");
+        assert_eq!(read.engine_version, "240.1.0.5");
+        assert!(read.acz);
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -532,6 +764,7 @@ mod tests {
             version: "1".into(),
             fork_id: String::new(),
             hash: "aaa".into(),
+            ..StoredBuild::default()
         };
         assert!(build_matches(&stored, &build));
         build.hash = "bbb".into();
