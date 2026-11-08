@@ -1,0 +1,94 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact: Illusio-windows-x64.zip
+          - os: ubuntu-latest
+            platform: linux
+            artifact: Illusio-linux-x64.tar.gz
+          - os: macos-latest
+            platform: macos
+            artifact: Illusio-macos-arm64.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build core library
+        run: cargo build --release
+        working-directory: core
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter create . --platforms=${{ matrix.platform }} --project-name illusio
+
+      - run: flutter pub get
+
+      - run: flutter analyze
+
+      - run: flutter build ${{ matrix.platform }} --release
+
+      - name: Bundle core library
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp ../core/target/release/illusio.dll build/windows/x64/runner/Release/
+          elif [ "${{ matrix.platform }}" = "linux" ]; then
+            cp ../core/target/release/libillusio.so build/linux/x64/release/bundle/lib/
+          else
+            cp ../core/target/release/libillusio.dylib build/macos/Build/Products/Release/illusio.app/Contents/MacOS/
+          fi
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            (cd build/windows/x64/runner/Release && 7z a "../../../../../Illusio-${VERSION}-windows-x64.zip" .)
+          elif [ "${{ matrix.platform }}" = "linux" ]; then
+            tar -czf "Illusio-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
+          else
+            (cd build/macos/Build/Products/Release && zip -r -y -q "${GITHUB_WORKSPACE}/Illusio-${VERSION}-macos-arm64.zip" illusio.app)
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Illusio-${{ matrix.platform }}
+          path: |
+            Illusio-*.zip
+            Illusio-*.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Illusio-*.zip
+            Illusio-*.tar.gz
+          generate_release_notes: true
