@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>illusio-loader</AssemblyName>
+    <RootNamespace>SS14.Loader</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="LoaderApi/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSec.Cryptography" Version="25.4.0" />
+    <PackageReference Include="libsodium" Version="1.0.20.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="signing_key" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
