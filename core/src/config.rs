@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::auth::LoginInfo;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -10,6 +12,8 @@ pub struct Config {
     pub launch_args: Vec<String>,
     #[serde(default)]
     pub last_server: String,
+    #[serde(default)]
+    pub login: Option<LoginInfo>,
 }
 
 pub fn config_dir() -> Option<PathBuf> {
