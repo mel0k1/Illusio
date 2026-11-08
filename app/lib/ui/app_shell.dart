@@ -82,6 +82,7 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _showProxyDialog() async {
     final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
     final error = widget.controller.proxyProbeError;
     final disable = await showDialog<bool>(
       context: context,
@@ -113,7 +114,7 @@ class _AppShellState extends State<AppShell> {
     if (disable == true) {
       await widget.controller.continueWithoutProxy();
       messenger.showSnackBar(
-        illusioSnackBar(S.of(context).proxySessionOffNotice),
+        illusioSnackBar(s.proxySessionOffNotice),
       );
     } else {
       widget.controller.dismissProxyWarning();
