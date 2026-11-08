@@ -12,7 +12,9 @@ import '../models/server_info.dart';
 import '../models/server_status.dart';
 
 class AppController extends ChangeNotifier {
-  AppController() : favorites = [], accounts = [] {
+  AppController()
+      : favorites = [],
+        accounts = [] {
     ready = _loadConfig();
   }
 
@@ -28,21 +30,50 @@ class AppController extends ChangeNotifier {
 
   String theme = 'system';
   bool hideEmpty = false;
+  bool hideFull = false;
   bool fullscreen = false;
   bool vsync = true;
+  List<String> hubs = [];
+  String guestUsername = '';
+  String usernameOverride = '';
+  String engineOverride = '';
+  bool clientLogs = false;
+  List<String> filterTags = [];
+  int filterMinPlayers = 0;
+  int filterMaxPlayers = 0;
+  List<Map<String, String>> acceptedPrivacy = [];
+
   final List<String> modsEnabled = [];
   List<ModEntry> mods = [];
   String modsPath = '';
+  String logsPath = '';
 
   List<HubServer> hubServers = [];
   bool hubLoading = false;
   String hubError = '';
+  Map<String, ServerPing> pings = {};
 
   bool loginBusy = false;
   String loginError = '';
 
   DownloadStateInfo downloadState = DownloadStateInfo.empty;
   bool connecting = false;
+
+  String? pendingConnect;
+
+  bool get isGuest => login != null && login!.token.isEmpty;
+
+  String get effectiveUsername {
+    if (isGuest) {
+      final guest = guestUsername.trim();
+      return guest.isEmpty ? 'Гость' : guest;
+    }
+    final override = usernameOverride.trim();
+    if (override.isNotEmpty) {
+      return override;
+    }
+    return login?.username ?? '';
+  }
 
   Future<void> _loadConfig() async {
     final result = await Isolate.run(Core.loadConfig);
@@ -58,17 +89,20 @@ class AppController extends ChangeNotifier {
         ..addAll(
           ((config['accounts'] as List?) ?? const [])
               .map(LoginInfo.fromMap)
-              .whereType<LoginInfo>(),
+              .whereType<LoginInfo>()
+              .where((account) => account.token.isNotEmpty),
         );
       favorites
         ..clear()
         ..addAll(
           ((config['favorites'] as List?) ?? const []).map(
-            (value) => GameServer.fromJson((value as Map).cast<String, dynamic>()),
+            (value) =>
+                GameServer.fromJson((value as Map).cast<String, dynamic>()),
           ),
         );
       theme = config['theme']?.toString() ?? 'system';
       hideEmpty = config['hide_empty'] == true;
+      hideFull = config['hide_full'] == true;
       fullscreen = config['fullscreen'] == true;
       vsync = config['vsync'] != false;
       modsEnabled
@@ -77,14 +111,35 @@ class AppController extends ChangeNotifier {
           ((config['mods_enabled'] as List?) ?? const [])
               .map((value) => value.toString()),
         );
-      if (login != null && !_accountsContain(login!)) {
+      hubs = ((config['hubs'] as List?) ?? const [])
+          .map((value) => value.toString())
+          .toList();
+      guestUsername = config['guest_username']?.toString() ?? '';
+      usernameOverride = config['username_override']?.toString() ?? '';
+      engineOverride = config['engine_override']?.toString() ?? '';
+      clientLogs = config['client_logs'] == true;
+      filterTags = ((config['filter_tags'] as List?) ?? const [])
+          .map((value) => value.toString())
+          .toList();
+      filterMinPlayers = (config['filter_min_players'] as num?)?.toInt() ?? 0;
+      filterMaxPlayers = (config['filter_max_players'] as num?)?.toInt() ?? 0;
+      acceptedPrivacy = ((config['accepted_privacy'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((entry) => {
+                'identifier': entry['identifier']?.toString() ?? '',
+                'version': entry['version']?.toString() ?? '',
+              })
+          .toList();
+      if (login != null &&
+          login!.token.isNotEmpty &&
+          !_accountsContain(login!)) {
         accounts.insert(0, login!);
       }
     } else {
       configError = result['error']?.toString() ?? '';
     }
     notifyListeners();
-    await _loadModsDir();
+    await _loadAuxDirs();
     _refreshSession();
   }
 
@@ -92,10 +147,14 @@ class AppController extends ChangeNotifier {
     return accounts.any((account) => account.username == info.username);
   }
 
-  Future<void> _loadModsDir() async {
-    final result = await Isolate.run(Core.modsDir);
-    if (result['ok'] == true) {
-      modsPath = result['path']?.toString() ?? '';
+  Future<void> _loadAuxDirs() async {
+    final modsResult = await Isolate.run(Core.modsDir);
+    if (modsResult['ok'] == true) {
+      modsPath = modsResult['path']?.toString() ?? '';
+    }
+    final logsResult = await Isolate.run(Core.logsDir);
+    if (logsResult['ok'] == true) {
+      logsPath = logsResult['path']?.toString() ?? '';
     }
   }
 
@@ -109,22 +168,53 @@ class AppController extends ChangeNotifier {
       'accounts': accounts.map((value) => value.toJson()).toList(),
       'theme': theme,
       'hide_empty': hideEmpty,
+      'hide_full': hideFull,
       'fullscreen': fullscreen,
       'vsync': vsync,
       'mods_enabled': modsEnabled,
+      'hubs': hubs,
+      'guest_username': guestUsername,
+      'username_override': usernameOverride,
+      'engine_override': engineOverride,
+      'client_logs': clientLogs,
+      'filter_tags': filterTags,
+      'filter_min_players': filterMinPlayers,
+      'filter_max_players': filterMaxPlayers,
+      'accepted_privacy': acceptedPrivacy,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
 
+  bool privacyAccepted(ServerPrivacyInfo? policy) {
+    if (policy == null) {
+      return true;
+    }
+    return acceptedPrivacy.any(
+      (entry) =>
+          entry['identifier'] == policy.identifier &&
+          entry['version'] == policy.version,
+    );
+  }
+
+  void acceptPrivacy(ServerPrivacyInfo policy) {
+    acceptedPrivacy.removeWhere(
+      (entry) => entry['identifier'] == policy.identifier,
+    );
+    acceptedPrivacy.add({
+      'identifier': policy.identifier,
+      'version': policy.version,
+    });
+    saveConfig();
+  }
+
   Future<void> _refreshSession() async {
     final current = login;
-    if (current == null) {
+    if (current == null || current.token.isEmpty) {
       return;
     }
     final payload = jsonEncode({
-      'auth_url': current.authServer.isEmpty
-          ? Core.defaultAuthUrl
-          : current.authServer,
+      'auth_url':
+          current.authServer.isEmpty ? Core.defaultAuthUrl : current.authServer,
       'username': current.username,
       'user_id': current.userId,
       'token': current.token,
@@ -193,14 +283,31 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
+  Future<void> loginAsGuest() async {
+    final guest = guestUsername.trim();
+    login = LoginInfo(
+      token: '',
+      username: guest.isEmpty ? 'Гость' : guest,
+      userId: '',
+      expireTime: '',
+      authServer: '',
+    );
+    loginError = '';
+    notifyListeners();
+    await saveConfig();
+  }
+
   Future<void> switchAccount(LoginInfo account) async {
-    if (login?.username == account.username) {
+    if (account.token.isEmpty) {
+      await loginAsGuest();
+      return;
+    }
+    if (login?.username == account.username && !isGuest) {
       return;
     }
     final payload = jsonEncode({
-      'auth_url': account.authServer.isEmpty
-          ? Core.defaultAuthUrl
-          : account.authServer,
+      'auth_url':
+          account.authServer.isEmpty ? Core.defaultAuthUrl : account.authServer,
       'username': account.username,
       'user_id': account.userId,
       'token': account.token,
@@ -228,16 +335,18 @@ class AppController extends ChangeNotifier {
     if (current == null) {
       return;
     }
-    final payload = jsonEncode({
-      'auth_url': current.authServer.isEmpty
-          ? Core.defaultAuthUrl
-          : current.authServer,
-      'token': current.token,
-    });
     login = null;
     accounts.removeWhere((account) => account.username == current.username);
     notifyListeners();
     await saveConfig();
+    if (current.token.isEmpty) {
+      return;
+    }
+    final payload = jsonEncode({
+      'auth_url':
+          current.authServer.isEmpty ? Core.defaultAuthUrl : current.authServer,
+      'token': current.token,
+    });
     await Isolate.run(() => Core.logout(payload));
   }
 
@@ -258,7 +367,39 @@ class AppController extends ChangeNotifier {
     if (url.isEmpty || isFavorite(url)) {
       return;
     }
-    favorites.add(GameServer(name: name.isEmpty ? url : name, url: url));
+    favorites.add(
+      GameServer(
+        name: name.isEmpty ? url : name,
+        url: url,
+        raised: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    notifyListeners();
+    saveConfig();
+  }
+
+  void editFavorite(String url, String newName, String newUrl) {
+    final index = favorites.indexWhere((server) => server.url == url);
+    if (index < 0) {
+      return;
+    }
+    favorites[index] = GameServer(
+      name: newName.isEmpty ? url : newName,
+      url: newUrl.isEmpty ? url : newUrl,
+      raised: DateTime.now().millisecondsSinceEpoch,
+    );
+    notifyListeners();
+    saveConfig();
+  }
+
+  void raiseFavorite(String url) {
+    final index = favorites.indexWhere((server) => server.url == url);
+    if (index < 0) {
+      return;
+    }
+    favorites[index] = favorites[index].copyWith(
+      raised: DateTime.now().millisecondsSinceEpoch,
+    );
     notifyListeners();
     saveConfig();
   }
@@ -277,6 +418,18 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  List<GameServer> get sortedFavorites {
+    final list = List<GameServer>.from(favorites);
+    list.sort((left, right) {
+      final byRaised = right.raised.compareTo(left.raised);
+      if (byRaised != 0) {
+        return byRaised;
+      }
+      return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+    });
+    return list;
+  }
+
   Future<void> loadHub() async {
     if (hubLoading) {
       return;
@@ -284,7 +437,8 @@ class AppController extends ChangeNotifier {
     hubLoading = true;
     hubError = '';
     notifyListeners();
-    final result = await Isolate.run(() => Core.fetchServers(''));
+    final payload = jsonEncode(hubs);
+    final result = await Isolate.run(() => Core.fetchServers(payload));
     hubLoading = false;
     if (result['ok'] == true) {
       hubServers = ((result['servers'] as List?) ?? const [])
@@ -292,10 +446,32 @@ class AppController extends ChangeNotifier {
           .where((server) => !server.empty)
           .toList();
       hubServers.sort((left, right) => right.players.compareTo(left.players));
+      notifyListeners();
+      _pingVisible();
     } else {
       hubError = result['error']?.toString() ?? 'хаб недоступен';
     }
     notifyListeners();
+  }
+
+  Future<void> _pingVisible() async {
+    final urls = hubServers.take(80).map((server) => server.address).toList();
+    if (urls.isEmpty) {
+      return;
+    }
+    final payload = jsonEncode(urls);
+    final result = await Isolate.run(() => Core.pingServers(payload));
+    if (result['ok'] == true) {
+      final updated = <String, ServerPing>{};
+      for (final ping in ((result['pings'] as List?) ?? const [])) {
+        final parsed = ServerPing.fromMap(ping);
+        if (parsed != null) {
+          updated[parsed.url] = parsed;
+        }
+      }
+      pings = updated;
+      notifyListeners();
+    }
   }
 
   void setTheme(String value) {
@@ -310,6 +486,12 @@ class AppController extends ChangeNotifier {
     saveConfig();
   }
 
+  void setHideFull(bool value) {
+    hideFull = value;
+    notifyListeners();
+    saveConfig();
+  }
+
   void setFullscreen(bool value) {
     fullscreen = value;
     notifyListeners();
@@ -318,6 +500,58 @@ class AppController extends ChangeNotifier {
 
   void setVsync(bool value) {
     vsync = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setGuestUsername(String value) {
+    guestUsername = value;
+    if (isGuest) {
+      login = LoginInfo(
+        token: '',
+        username: value.trim().isEmpty ? 'Гость' : value.trim(),
+        userId: '',
+        expireTime: '',
+        authServer: '',
+      );
+    }
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setUsernameOverride(String value) {
+    usernameOverride = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setEngineOverride(String value) {
+    engineOverride = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setClientLogs(bool value) {
+    clientLogs = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setHubs(List<String> value) {
+    hubs = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setFilterTags(List<String> value) {
+    filterTags = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setFilterPlayers(int min, int max) {
+    filterMinPlayers = min;
+    filterMaxPlayers = max;
     notifyListeners();
     saveConfig();
   }
@@ -359,6 +593,13 @@ class AppController extends ChangeNotifier {
     await Isolate.run(() => Core.openPath(modsPath));
   }
 
+  Future<void> openLogsDir() async {
+    if (logsPath.isEmpty) {
+      return;
+    }
+    await Isolate.run(() => Core.openPath(logsPath));
+  }
+
   Future<String> configDirPath() async {
     final result = await Isolate.run(Core.configDir);
     return result['path']?.toString() ?? '';
@@ -367,6 +608,10 @@ class AppController extends ChangeNotifier {
   Future<bool> clearCache() async {
     final result = await Isolate.run(Core.clearCache);
     return result['ok'] == true;
+  }
+
+  Future<Map<String, dynamic>> checkLauncherUpdate(String version) async {
+    return Isolate.run(() => Core.checkUpdate(version));
   }
 
   GameServer? selectedServer;
@@ -397,6 +642,10 @@ class AppController extends ChangeNotifier {
     return Isolate.run(() => Core.fetchStatus(url));
   }
 
+  Future<Map<String, dynamic>> fetchInfo(String url) async {
+    return Isolate.run(() => Core.fetchInfo(url));
+  }
+
   List<String> _launchArgList() {
     final args = List<String>.from(launchArgs);
     if (fullscreen) {
@@ -413,9 +662,60 @@ class AppController extends ChangeNotifier {
       return const [];
     }
     final separator = Platform.isWindows ? '\\' : '/';
-    return modsEnabled
-        .map((name) => '$modsPath$separator$name')
-        .toList();
+    return modsEnabled.map((name) => '$modsPath$separator$name').toList();
+  }
+
+  Map<String, String?> _authFields(ServerFullInfo? info) {
+    final authAllowed = info?.authUsable == true && !isGuest && login != null;
+    return {
+      'token': authAllowed ? login?.token : '',
+      'userId': authAllowed ? login?.userId : '',
+      'pubkey': authAllowed ? info?.authPublicKey : '',
+      'server': authAllowed ? login?.authServer : '',
+    };
+  }
+
+  Map<String, dynamic> _launchSpec({
+    required String installDir,
+    required String serverUrl,
+    required ServerFullInfo? info,
+    required bool acz,
+    required List<String> overlays,
+    required String connectAddress,
+  }) {
+    final auth = _authFields(info);
+    final logDir = clientLogs && logsPath.isNotEmpty ? logsPath : '';
+    final overrideZip = engineOverride.trim();
+    final overrideFile =
+        overrideZip.isNotEmpty && File(overrideZip).existsSync();
+    final useOverride = acz && overrideFile;
+    final engineZip =
+        useOverride ? overrideZip : (acz ? downloadState.engineZip : '');
+    final engineSig = useOverride ? '00' : (acz ? downloadState.engineSig : '');
+    return {
+      'install_dir': installDir,
+      'args': _launchArgList(),
+      'username': effectiveUsername,
+      'server_url': serverUrl,
+      'connect_address': connectAddress,
+      'auth_token': auth['token'] ?? '',
+      'auth_user_id': auth['userId'] ?? '',
+      'auth_pubkey': auth['pubkey'] ?? '',
+      'auth_server': auth['server'] ?? '',
+      'build_download_url': info?.build.downloadUrl ?? '',
+      'build_version': info?.build.version ?? '',
+      'build_fork_id': info?.build.forkId ?? '',
+      'build_hash': info?.build.hash ?? '',
+      'build_engine_version': info?.build.engineVersion ?? '',
+      'mode': acz ? 'acz' : 'zip',
+      'loader_dir': acz ? loaderDir : '',
+      'engine_zip': engineZip,
+      'content_zip': acz ? downloadState.contentZip : '',
+      'engine_sig': engineSig,
+      'mods': acz ? overlays : [],
+      'log_dir': logDir,
+      'allow_unsigned': useOverride,
+    };
   }
 
   Future<Map<String, dynamic>> connect(GameServer server) async {
@@ -454,7 +754,29 @@ class AppController extends ChangeNotifier {
     return _pollDownload(server);
   }
 
-  Future<Map<String, dynamic>> _pollDownload(GameServer server) async {
+  Future<Map<String, dynamic>> connectBundle(String zipPath) async {
+    if (connecting) {
+      return {'ok': false, 'error': 'подключение уже идёт'};
+    }
+    connecting = true;
+    selectedServer = null;
+    statusInfo = null;
+    downloadState = DownloadStateInfo.empty;
+    notifyListeners();
+    final payload = jsonEncode({
+      'bundle_zip': zipPath,
+      'install_dir': installDir,
+    });
+    final started = await Isolate.run(() => Core.startDownload(payload));
+    if (started['ok'] != true) {
+      connecting = false;
+      notifyListeners();
+      return started;
+    }
+    return _pollDownload(null);
+  }
+
+  Future<Map<String, dynamic>> _pollDownload(GameServer? server) async {
     while (true) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
       final result = await Isolate.run(Core.downloadState);
@@ -482,34 +804,23 @@ class AppController extends ChangeNotifier {
     return '$exeDir${separator}loader';
   }
 
-  Future<Map<String, dynamic>> _launchAfterDownload(GameServer server) async {
+  Future<Map<String, dynamic>> _launchAfterDownload(GameServer? server) async {
     final info = downloadState.info;
-    final current = login;
-    final authAllowed = info?.authUsable == true;
     final acz = downloadState.isAcz;
-    final spec = jsonEncode({
-      'install_dir': downloadState.installDir,
-      'args': _launchArgList(),
-      'username': current?.username ?? '',
-      'server_url': server.url,
-      'connect_address': info?.connectAddress ?? '',
-      'auth_token': authAllowed ? (current?.token ?? '') : '',
-      'auth_user_id': authAllowed ? (current?.userId ?? '') : '',
-      'auth_pubkey': authAllowed ? (info?.authPublicKey ?? '') : '',
-      'auth_server': authAllowed ? (current?.authServer ?? '') : '',
-      'build_download_url': info?.build.downloadUrl ?? '',
-      'build_version': info?.build.version ?? '',
-      'build_fork_id': info?.build.forkId ?? '',
-      'build_hash': info?.build.hash ?? '',
-      'build_engine_version': info?.build.engineVersion ?? '',
-      'mode': acz ? 'acz' : 'zip',
-      'loader_dir': acz ? loaderDir : '',
-      'engine_zip': acz ? downloadState.engineZip : '',
-      'content_zip': acz ? downloadState.contentZip : '',
-      'engine_sig': acz ? downloadState.engineSig : '',
-      'mods': acz ? enabledModPaths() : [],
-    });
-    final result = await Isolate.run(() => Core.launch(spec));
+    final bundle = downloadState.bundleZip;
+    final overlays = <String>[
+      if (bundle.isNotEmpty) bundle,
+      ...enabledModPaths(),
+    ];
+    final spec = _launchSpec(
+      installDir: downloadState.installDir,
+      serverUrl: server?.url ?? '',
+      info: info,
+      acz: acz,
+      overlays: overlays,
+      connectAddress: info?.connectAddress ?? '',
+    );
+    final result = await Isolate.run(() => Core.launch(jsonEncode(spec)));
     if (result['ok'] != true) {
       return result;
     }
@@ -519,10 +830,14 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> launchFromDirectory() async {
-    final spec = jsonEncode({
-      'install_dir': installDir,
-      'args': _launchArgList(),
-    });
-    await Isolate.run(() => Core.launch(spec));
+    final spec = _launchSpec(
+      installDir: installDir,
+      serverUrl: '',
+      info: null,
+      acz: false,
+      overlays: const [],
+      connectAddress: '',
+    );
+    await Isolate.run(() => Core.launch(jsonEncode(spec)));
   }
 }

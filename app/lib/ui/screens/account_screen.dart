@@ -68,6 +68,18 @@ class _AccountSheetState extends State<AccountSheet> {
     );
   }
 
+  Future<void> _openLink(String url) async {
+    await widget.controller.openUrl(url);
+  }
+
+  Future<void> _loginGuest() async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    await widget.controller.loginAsGuest();
+    navigator.pop();
+    messenger.showSnackBar(illusioSnackBar('Вошли как гость'));
+  }
+
   Future<void> _switch(LoginInfo account) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
@@ -81,12 +93,12 @@ class _AccountSheetState extends State<AccountSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: ListenableBuilder(
         listenable: widget.controller,
-        builder: (context, _) => _loginMode
-            ? _buildLogin(context)
-            : _buildAccounts(context),
+        builder: (context, _) =>
+            _loginMode ? _buildLogin(context) : _buildAccounts(context),
       ),
     );
   }
@@ -130,7 +142,8 @@ class _AccountSheetState extends State<AccountSheet> {
               ),
               const SizedBox(height: 12),
               Center(
-                child: Text(current.username, style: theme.textTheme.titleLarge),
+                child:
+                    Text(current.username, style: theme.textTheme.titleLarge),
               ),
               if (current.expireTime.isNotEmpty)
                 Center(
@@ -157,6 +170,12 @@ class _AccountSheetState extends State<AccountSheet> {
               onPressed: () => setState(() => _loginMode = true),
               icon: const Icon(Icons.person_add_alt_1, size: 20),
               label: const Text('Добавить аккаунт'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _loginGuest,
+              icon: const Icon(Icons.person_off_outlined, size: 20),
+              label: const Text('Войти как гость'),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -217,7 +236,8 @@ class _AccountSheetState extends State<AccountSheet> {
               autofillHints: const [AutofillHints.username],
               enableSuggestions: false,
               autocorrect: false,
-              decoration: illusioInput('Логин', prefixIcon: const Icon(Icons.person_outline, size: 20)),
+              decoration: illusioInput('Логин',
+                  prefixIcon: const Icon(Icons.person_outline, size: 20)),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -255,7 +275,8 @@ class _AccountSheetState extends State<AccountSheet> {
               const SizedBox(height: 16),
               Text(
                 controller.loginError,
-                style: theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
+                style:
+                    theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -274,6 +295,24 @@ class _AccountSheetState extends State<AccountSheet> {
             TextButton(
               onPressed: () => setState(() => _loginMode = false),
               child: const Text('Назад'),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => _openLink(Core.forgotPasswordUrl),
+                  child: const Text('Забыли пароль?'),
+                ),
+                TextButton(
+                  onPressed: () => _openLink(Core.resendConfirmationUrl),
+                  child: const Text('Повторить письмо'),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () => _openLink(Core.manageAccountUrl),
+              child: const Text('Управление аккаунтом на сайте'),
             ),
           ],
         ),
@@ -317,7 +356,8 @@ class _AccountTile extends StatelessWidget {
           style: Theme.of(context).textTheme.labelLarge,
         ),
       ),
-      title: Text(account.username, style: Theme.of(context).textTheme.titleMedium),
+      title: Text(account.username,
+          style: Theme.of(context).textTheme.titleMedium),
       subtitle: Text(
         'сохранённый аккаунт',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(

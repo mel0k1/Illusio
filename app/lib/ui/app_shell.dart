@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/server.dart';
 import '../state/app_controller.dart';
 import 'theme.dart';
 import 'screens/account_screen.dart';
@@ -7,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'screens/mods_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'widgets/connect_flow.dart';
 import 'widgets/illusio_logo.dart';
 
 class DockItem {
@@ -22,7 +24,8 @@ class DockItem {
 }
 
 const List<DockItem> dockItems = [
-  DockItem(icon: Icons.star_outline, selectedIcon: Icons.star, label: 'Главная'),
+  DockItem(
+      icon: Icons.star_outline, selectedIcon: Icons.star, label: 'Главная'),
   DockItem(
     icon: Icons.travel_explore_outlined,
     selectedIcon: Icons.travel_explore,
@@ -47,6 +50,26 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _consumePendingConnect();
+  }
+
+  Future<void> _consumePendingConnect() async {
+    await widget.controller.ready;
+    if (!mounted) {
+      return;
+    }
+    final url = widget.controller.pendingConnect;
+    if (url == null || url.isEmpty) {
+      return;
+    }
+    widget.controller.pendingConnect = null;
+    await connectFlow(
+        context, widget.controller, GameServer(name: url, url: url));
+  }
 
   void _openAccount() {
     showModalBottomSheet<void>(
@@ -149,8 +172,9 @@ class _AccountChip extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 14,
-                backgroundColor:
-                    name == null ? scheme.outlineVariant : scheme.primaryContainer,
+                backgroundColor: name == null
+                    ? scheme.outlineVariant
+                    : scheme.primaryContainer,
                 foregroundColor: name == null
                     ? scheme.onSurfaceVariant
                     : scheme.onPrimaryContainer,
@@ -231,8 +255,7 @@ class IllusioDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shadowAlpha =
-        scheme.brightness == Brightness.dark ? 0.35 : 0.12;
+    final shadowAlpha = scheme.brightness == Brightness.dark ? 0.35 : 0.12;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
       child: Container(

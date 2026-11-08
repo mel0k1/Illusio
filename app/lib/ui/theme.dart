@@ -100,23 +100,30 @@ ThemeData buildIllusioTheme(Brightness brightness) {
     splashFactory: InkSparkle.splashFactory,
   );
   final textTheme = GoogleFonts.robotoFlexTextTheme(
-    base.textTheme.apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface),
+    base.textTheme
+        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface),
   );
   final body = textTheme.copyWith(
-    headlineLarge: textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.5),
-    headlineMedium: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
-    headlineSmall: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+    headlineLarge: textTheme.headlineLarge
+        ?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.5),
+    headlineMedium:
+        textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+    headlineSmall:
+        textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
     titleLarge: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
     titleMedium: textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w600,
       letterSpacing: 0.1,
     ),
-    labelLarge: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: 0.2),
+    labelLarge: textTheme.labelLarge
+        ?.copyWith(fontWeight: FontWeight.w600, letterSpacing: 0.2),
     labelMedium: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
   );
 
-  final stadium = RoundedRectangleBorder(borderRadius: BorderRadius.circular(24));
-  final buttonPadding = const EdgeInsets.symmetric(horizontal: 24, vertical: 14);
+  final stadium =
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(24));
+  final buttonPadding =
+      const EdgeInsets.symmetric(horizontal: 24, vertical: 14);
 
   return base.copyWith(
     textTheme: body,
@@ -208,14 +215,17 @@ ThemeData buildIllusioTheme(Brightness brightness) {
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: scheme.inverseSurface,
-      contentTextStyle: body.bodyMedium?.copyWith(color: scheme.onInverseSurface),
+      contentTextStyle:
+          body.bodyMedium?.copyWith(color: scheme.onInverseSurface),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
-    dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1, space: 1),
+    dividerTheme:
+        DividerThemeData(color: scheme.outlineVariant, thickness: 1, space: 1),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: scheme.surfaceContainer,
-      hintStyle: body.bodyMedium?.copyWith(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+      hintStyle: body.bodyMedium
+          ?.copyWith(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
@@ -257,7 +267,8 @@ ThemeData buildIllusioTheme(Brightness brightness) {
   );
 }
 
-InputDecoration illusioInput(String label, {String? hint, Widget? suffix, Widget? prefixIcon}) {
+InputDecoration illusioInput(String label,
+    {String? hint, Widget? suffix, Widget? prefixIcon}) {
   return InputDecoration(
     labelText: label,
     hintText: hint,

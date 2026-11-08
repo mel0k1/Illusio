@@ -18,6 +18,9 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _installDir = TextEditingController();
   final TextEditingController _launchArgs = TextEditingController();
+  final TextEditingController _guest = TextEditingController();
+  final TextEditingController _override = TextEditingController();
+  final TextEditingController _engineOverride = TextEditingController();
   String _configPath = '';
   bool _pathsLoaded = false;
 
@@ -35,6 +38,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _installDir.text = widget.controller.installDir;
       _launchArgs.text = widget.controller.launchArgs.join(' ');
+      _guest.text = widget.controller.guestUsername;
+      _override.text = widget.controller.usernameOverride;
+      _engineOverride.text = widget.controller.engineOverride;
     });
     final path = await widget.controller.configDirPath();
     if (!mounted) {
@@ -50,6 +56,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _installDir.dispose();
     _launchArgs.dispose();
+    _guest.dispose();
+    _override.dispose();
+    _engineOverride.dispose();
     super.dispose();
   }
 
@@ -60,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .split(RegExp(r'\s+'))
         .where((value) => value.isNotEmpty)
         .toList();
+    widget.controller.setEngineOverride(_engineOverride.text.trim());
     await widget.controller.saveConfig();
     if (!mounted) {
       return;
@@ -74,6 +84,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     messenger.showSnackBar(
       illusioSnackBar(ok ? 'Кэш загрузок очищен' : 'Не удалось очистить кэш'),
     );
+  }
+
+  Future<void> _saveAccount() async {
+    widget.controller.setGuestUsername(_guest.text.trim());
+    widget.controller.setUsernameOverride(_override.text.trim());
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(illusioSnackBar('Настройки аккаунта сохранены'));
+  }
+
+  Future<void> _addHub() async {
+    final urlController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Добавить хаб'),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          decoration: illusioInput(
+            'Адрес хаба',
+            hint: 'https://hub.example.com',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final url = urlController.text.trim();
+              if (url.isEmpty) {
+                return;
+              }
+              final hubs = List<String>.from(widget.controller.hubs);
+              if (!hubs.contains(url)) {
+                hubs.add(url);
+                widget.controller.setHubs(hubs);
+              }
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
   }
 
   void _openAccount() {
@@ -129,9 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: Text('Светлая'),
                       ),
                     ],
-                    selected: {
-                      controller.theme == 'light' ? 'light' : 'dark'
-                    },
+                    selected: {controller.theme == 'light' ? 'light' : 'dark'},
                     onSelectionChanged: (selection) =>
                         controller.setTheme(selection.first),
                   ),
@@ -168,11 +226,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: _card(context),
-              child: _SwitchRow(
-                title: 'Скрывать пустые сервера',
-                subtitle: 'сервера без игроков не отображаются',
-                value: controller.hideEmpty,
-                onChanged: controller.setHideEmpty,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SwitchRow(
+                    title: 'Скрывать пустые сервера',
+                    subtitle: 'сервера без игроков не отображаются',
+                    value: controller.hideEmpty,
+                    onChanged: controller.setHideEmpty,
+                  ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: 'Скрывать полные сервера',
+                    subtitle: 'у них заняты все слоты',
+                    value: controller.hideFull,
+                    onChanged: controller.setHideFull,
+                  ),
+                  const SizedBox(height: 14),
+                  Text('Хабы', style: theme.textTheme.titleMedium),
+                  Text(
+                    'основной хаб SS14 подключён всегда, ниже — дополнительные',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final hub in controller.hubs)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              hub,
+                              style: theme.textTheme.bodyMedium,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => controller.setHubs(
+                              controller.hubs
+                                  .where((value) => value != hub)
+                                  .toList(),
+                            ),
+                            icon: const Icon(Icons.close, size: 18),
+                            tooltip: 'Убрать хаб',
+                          ),
+                        ],
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: _addHub,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Добавить хаб'),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
@@ -198,6 +306,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'Аргументы запуска',
                       hint: '--profile server',
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _engineOverride,
+                    decoration: illusioInput(
+                      'Свой движок (zip)',
+                      hint: 'путь к архиву движка вместо CDN',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _SwitchRow(
+                    title: 'Логи клиента',
+                    subtitle: 'stdout и stderr пишутся в каталог logs',
+                    value: controller.clientLogs,
+                    onChanged: controller.setClientLogs,
                   ),
                   const SizedBox(height: 16),
                   Align(
@@ -231,11 +354,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 14),
+                  TextField(
+                    controller: _guest,
+                    decoration: illusioInput(
+                      'Имя гостя',
+                      hint: 'под каким именем заходить без аккаунта',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _override,
+                    decoration: illusioInput(
+                      'Подменить имя',
+                      hint: 'имя вместо логина аккаунта',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.tonalIcon(
+                    onPressed: _saveAccount,
+                    icon: const Icon(Icons.save_outlined, size: 20),
+                    label: const Text('Сохранить'),
+                  ),
+                  const SizedBox(height: 14),
                   FilledButton.tonalIcon(
                     onPressed: _openAccount,
                     icon: const Icon(Icons.person_outline, size: 20),
                     label: Text(
-                      controller.login == null ? 'Войти' : 'Управление аккаунтами',
+                      controller.login == null
+                          ? 'Войти'
+                          : 'Управление аккаунтами',
                     ),
                   ),
                 ],
@@ -267,8 +414,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: const Text('Каталог модов'),
                       ),
                       OutlinedButton.icon(
+                        onPressed: controller.openLogsDir,
+                        icon: const Icon(Icons.receipt_long_outlined, size: 20),
+                        label: const Text('Каталог логов'),
+                      ),
+                      OutlinedButton.icon(
                         onPressed: _clearCache,
-                        icon: const Icon(Icons.cleaning_services_outlined, size: 20),
+                        icon: const Icon(Icons.cleaning_services_outlined,
+                            size: 20),
                         label: const Text('Очистить кэш'),
                       ),
                     ],

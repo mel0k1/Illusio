@@ -33,18 +33,78 @@ class ServerBuildInfo {
   }
 }
 
+class ServerLinkInfo {
+  const ServerLinkInfo({
+    required this.name,
+    required this.icon,
+    required this.url,
+  });
+
+  final String name;
+  final String icon;
+  final String url;
+
+  static ServerLinkInfo? fromMap(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    final url = raw['url']?.toString() ?? '';
+    if (url.isEmpty) {
+      return null;
+    }
+    return ServerLinkInfo(
+      name: raw['name']?.toString() ?? '',
+      icon: raw['icon']?.toString() ?? '',
+      url: url,
+    );
+  }
+}
+
+class ServerPrivacyInfo {
+  const ServerPrivacyInfo({
+    required this.link,
+    required this.identifier,
+    required this.version,
+  });
+
+  final String link;
+  final String identifier;
+  final String version;
+
+  static ServerPrivacyInfo? fromMap(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    final identifier = raw['identifier']?.toString() ?? '';
+    if (identifier.isEmpty) {
+      return null;
+    }
+    return ServerPrivacyInfo(
+      link: raw['link']?.toString() ?? '',
+      identifier: identifier,
+      version: raw['version']?.toString() ?? '',
+    );
+  }
+}
+
 class ServerFullInfo {
   const ServerFullInfo({
     required this.connectAddress,
     required this.authMode,
     required this.authPublicKey,
     required this.build,
+    this.desc = '',
+    this.links = const [],
+    this.privacyPolicy,
   });
 
   final String connectAddress;
   final int authMode;
   final String authPublicKey;
   final ServerBuildInfo build;
+  final String desc;
+  final List<ServerLinkInfo> links;
+  final ServerPrivacyInfo? privacyPolicy;
 
   static const int authModeDisabled = 2;
 
@@ -55,6 +115,10 @@ class ServerFullInfo {
       return null;
     }
     final auth = (raw['auth'] as Map?) ?? const {};
+    final links = ((raw['links'] as List?) ?? const [])
+        .map(ServerLinkInfo.fromMap)
+        .whereType<ServerLinkInfo>()
+        .toList();
     return ServerFullInfo(
       connectAddress: raw['connect_address']?.toString() ?? '',
       authMode: (auth['mode'] is int)
@@ -62,6 +126,9 @@ class ServerFullInfo {
           : int.tryParse(auth['mode']?.toString() ?? '') ?? 0,
       authPublicKey: auth['public_key']?.toString() ?? '',
       build: ServerBuildInfo.fromMap(raw['build']),
+      desc: raw['desc']?.toString() ?? '',
+      links: links,
+      privacyPolicy: ServerPrivacyInfo.fromMap(raw['privacy_policy']),
     );
   }
 }
@@ -80,6 +147,7 @@ class DownloadStateInfo {
     required this.contentZip,
     required this.engineSig,
     required this.info,
+    this.bundleZip = '',
   });
 
   final String phase;
@@ -94,6 +162,7 @@ class DownloadStateInfo {
   final String contentZip;
   final String engineSig;
   final ServerFullInfo? info;
+  final String bundleZip;
 
   bool get isDone => phase == 'done';
 
@@ -176,6 +245,7 @@ class DownloadStateInfo {
       engineZip: raw['engineZip']?.toString() ?? '',
       contentZip: raw['contentZip']?.toString() ?? '',
       engineSig: raw['engineSig']?.toString() ?? '',
+      bundleZip: raw['bundleZip']?.toString() ?? '',
       info: ServerFullInfo.fromMap(raw['info']),
     );
   }

@@ -70,7 +70,8 @@ class _ModsScreenState extends State<ModsScreen> {
                     children: [
                       Icon(Icons.extension, size: 20, color: scheme.primary),
                       const SizedBox(width: 8),
-                      Text('Как это работает', style: theme.textTheme.titleMedium),
+                      Text('Как это работает',
+                          style: theme.textTheme.titleMedium),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -93,8 +94,7 @@ class _ModsScreenState extends State<ModsScreen> {
                         onPressed: controller.modsPath.isEmpty
                             ? null
                             : () async {
-                                final messenger =
-                                    ScaffoldMessenger.of(context);
+                                final messenger = ScaffoldMessenger.of(context);
                                 await controller.openModsDir();
                                 messenger.showSnackBar(
                                   illusioSnackBar(
@@ -189,13 +189,17 @@ class _ModTile extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: enabled ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+              color: enabled
+                  ? scheme.secondaryContainer
+                  : scheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
               Icons.inventory_2_outlined,
               size: 20,
-              color: enabled ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+              color: enabled
+                  ? scheme.onSecondaryContainer
+                  : scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 14),

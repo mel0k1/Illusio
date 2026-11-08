@@ -10,6 +10,7 @@ class HubServer {
     required this.runLevel,
     required this.roundId,
     required this.statusMessage,
+    this.hub = '',
   });
 
   final String address;
@@ -22,6 +23,7 @@ class HubServer {
   final int runLevel;
   final int roundId;
   final String statusMessage;
+  final String hub;
 
   static String _string(Object? value) => value?.toString() ?? '';
 
@@ -61,10 +63,15 @@ class HubServer {
       runLevel: _int(raw['run_level']),
       roundId: _int(raw['round_id']),
       statusMessage: _string(raw['status_message']),
+      hub: _string(raw['hub']),
     );
   }
 
   bool get empty => address.isEmpty;
+
+  bool get full => softMaxPlayers > 0 && players >= softMaxPlayers;
+
+  String get hubLabel => hub.isEmpty ? '' : 'хаб $hub';
 
   String get playersLabel {
     if (softMaxPlayers <= 0) {
@@ -84,6 +91,41 @@ class HubServer {
       default:
         return '';
     }
+  }
+}
+
+class ServerPing {
+  const ServerPing({
+    required this.url,
+    required this.pingMs,
+    required this.online,
+  });
+
+  final String url;
+  final int pingMs;
+  final bool online;
+
+  static ServerPing? fromMap(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+    return ServerPing(
+      url: raw['url']?.toString() ?? '',
+      pingMs: (raw['ms'] as num?)?.toInt() ?? 0,
+      online: raw['online'] == true,
+    );
+  }
+
+  String get label => online ? '$pingMs мс' : '—';
+
+  int get quality {
+    if (!online) {
+      return 3;
+    }
+    if (pingMs < 120) {
+      return 0;
+    }
+    return pingMs < 220 ? 1 : 2;
   }
 }
 

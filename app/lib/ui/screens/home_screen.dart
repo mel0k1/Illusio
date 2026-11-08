@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/server.dart';
@@ -78,6 +79,71 @@ class _HomeScreenState extends State<HomeScreen> {
     urlController.dispose();
   }
 
+  Future<void> _openEditDialog(GameServer server) async {
+    final nameController = TextEditingController(text: server.name);
+    final urlController = TextEditingController(text: server.url);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Изменить сервер'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: illusioInput('Название'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: urlController,
+              decoration: illusioInput('Адрес сервера'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              widget.controller.editFavorite(
+                server.url,
+                nameController.text.trim(),
+                urlController.text.trim(),
+              );
+              Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    urlController.dispose();
+  }
+
+  Future<void> _pickBundle() async {
+    final messenger = ScaffoldMessenger.of(context);
+    const type = XTypeGroup(label: 'реплеи', extensions: ['zip']);
+    final files = await openFiles(acceptedTypeGroups: [type]);
+    if (files.isEmpty) {
+      return;
+    }
+    final path = files.first.path;
+    if (!path.toLowerCase().endsWith('.zip')) {
+      messenger.showSnackBar(
+        illusioSnackBar('нужен zip-архив content bundle'),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    await bundleFlow(context, widget.controller, path);
+  }
+
   void _connectDirect() {
     final url = _direct.text.trim();
     if (url.isEmpty) {
@@ -92,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
-        final favorites = widget.controller.favorites;
+        final favorites = widget.controller.sortedFavorites;
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
@@ -105,10 +171,23 @@ class _HomeScreenState extends State<HomeScreen> {
               controller: _direct,
               onConnect: _connectDirect,
             ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickBundle,
+                    icon: const Icon(Icons.movie_outlined, size: 20),
+                    label: const Text('Запустить реплей'),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 28),
             Row(
               children: [
-                Text('Избранное', style: Theme.of(context).textTheme.titleMedium),
+                Text('Избранное',
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(width: 8),
                 Text(
                   '${favorites.length}',
@@ -134,6 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   controller: widget.controller,
                   onConnect: () =>
                       connectFlow(context, widget.controller, server),
+                  onEdit: () => _openEditDialog(server),
                 ),
                 const SizedBox(height: 10),
               ],
@@ -254,7 +334,8 @@ class _EmptyFavorites extends StatelessWidget {
         children: [
           const IllusioLogo(size: 72),
           const SizedBox(height: 16),
-          Text('Здесь пока пусто', style: Theme.of(context).textTheme.titleMedium),
+          Text('Здесь пока пусто',
+              style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
             'Добавьте первый сервер или найдите его на вкладке «Сервера».',
@@ -274,11 +355,13 @@ class _FavoriteTile extends StatelessWidget {
     required this.server,
     required this.controller,
     required this.onConnect,
+    required this.onEdit,
   });
 
   final GameServer server;
   final AppController controller;
   final VoidCallback onConnect;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -317,6 +400,18 @@ class _FavoriteTile extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                onPressed: () => controller.raiseFavorite(server.url),
+                icon: const Icon(Icons.vertical_align_top, size: 20),
+                color: scheme.onSurfaceVariant,
+                tooltip: 'Поднять наверх',
+              ),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                color: scheme.onSurfaceVariant,
+                tooltip: 'Изменить',
               ),
               IconButton(
                 onPressed: () => controller.removeFavorite(server.url),

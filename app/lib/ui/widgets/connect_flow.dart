@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../models/server.dart';
@@ -13,18 +15,117 @@ Future<void> connectFlow(
   if (controller.connecting) {
     return;
   }
+  final info = await controller.fetchInfo(server.url);
+  ServerFullInfo? full;
+  if (info['ok'] == true) {
+    full = ServerFullInfo.fromMap(info['info']);
+  }
+  final policy = full?.privacyPolicy;
+  if (policy != null && !controller.privacyAccepted(policy)) {
+    if (!context.mounted) {
+      return;
+    }
+    final accepted =
+        await _askPrivacy(context, controller, server.name, policy);
+    if (!accepted) {
+      return;
+    }
+  }
+  if (!context.mounted) {
+    return;
+  }
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => _ConnectDialog(controller: controller, server: server),
+    builder: (dialogContext) => _ConnectDialog(
+      controller: controller,
+      server: server,
+      title: server.name.isEmpty ? 'Подключение' : server.name,
+    ),
   );
 }
 
+Future<void> bundleFlow(
+  BuildContext context,
+  AppController controller,
+  String zipPath,
+) async {
+  if (controller.connecting) {
+    return;
+  }
+  final fileName = zipPath.split(Platform.separator).last;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => _ConnectDialog(
+      controller: controller,
+      server: GameServer(name: fileName, url: ''),
+      title: 'Запуск реплея',
+      isBundle: true,
+      bundlePath: zipPath,
+    ),
+  );
+}
+
+Future<bool> _askPrivacy(
+  BuildContext context,
+  AppController controller,
+  String serverName,
+  ServerPrivacyInfo policy,
+) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Политика конфиденциальности'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Сервер «$serverName» требует принять свою политику конфиденциальности перед подключением.',
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Версия: ${policy.version}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Отклонить'),
+        ),
+        FilledButton.tonal(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Принять'),
+        ),
+      ],
+    ),
+  );
+  if (result != true) {
+    return false;
+  }
+  controller.acceptPrivacy(policy);
+  return true;
+}
+
 class _ConnectDialog extends StatefulWidget {
-  const _ConnectDialog({required this.controller, required this.server});
+  const _ConnectDialog({
+    required this.controller,
+    required this.server,
+    required this.title,
+    this.isBundle = false,
+    this.bundlePath = '',
+  });
 
   final AppController controller;
   final GameServer server;
+  final String title;
+  final bool isBundle;
+  final String bundlePath;
 
   @override
   State<_ConnectDialog> createState() => _ConnectDialogState();
@@ -42,7 +143,9 @@ class _ConnectDialogState extends State<_ConnectDialog> {
   Future<void> _run() async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final result = await widget.controller.connect(widget.server);
+    final result = widget.isBundle
+        ? await widget.controller.connectBundle(widget.bundlePath)
+        : await widget.controller.connect(widget.server);
     if (!_visible || !mounted) {
       return;
     }
@@ -51,7 +154,8 @@ class _ConnectDialogState extends State<_ConnectDialog> {
       messenger.showSnackBar(illusioSnackBar('Клиент запущен'));
     } else {
       messenger.showSnackBar(
-        illusioSnackBar(result['error']?.toString() ?? 'не удалось подключиться'),
+        illusioSnackBar(
+            result['error']?.toString() ?? 'не удалось подключиться'),
       );
     }
   }
@@ -69,9 +173,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) => AlertDialog(
-        title: Text(widget.server.name.isEmpty
-            ? 'Подключение'
-            : widget.server.name),
+        title: Text(widget.title),
         content: _DownloadBody(state: widget.controller.downloadState),
         actions: [
           TextButton(

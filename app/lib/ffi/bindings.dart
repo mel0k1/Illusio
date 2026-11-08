@@ -81,9 +81,17 @@ class Core {
   static final Pointer<Utf8> Function() _clearCache = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_clear_cache')
       .asFunction();
-  static final void Function(Pointer<Utf8>) _free = _lib
-      .lookup<NativeFunction<FreeNative>>('illusio_free')
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _pingServers = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_ping_servers')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _checkUpdate = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_check_update')
+      .asFunction();
+  static final Pointer<Utf8> Function() _logsDir = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_logs_dir')
+      .asFunction();
+  static final void Function(Pointer<Utf8>) _free =
+      _lib.lookup<NativeFunction<FreeNative>>('illusio_free').asFunction();
 
   static String version() {
     final result = _run(_version);
@@ -137,7 +145,22 @@ class Core {
 
   static Map<String, dynamic> clearCache() => _run(_clearCache);
 
-  static const String registerUrl = 'https://account.spacestation14.com/Register';
+  static Map<String, dynamic> pingServers(String json) =>
+      _withString(json, _pingServers);
+
+  static Map<String, dynamic> checkUpdate(String version) =>
+      _withString(version, _checkUpdate);
+
+  static Map<String, dynamic> logsDir() => _run(_logsDir);
+
+  static const String registerUrl =
+      'https://account.spacestation14.com/Register';
+  static const String forgotPasswordUrl =
+      'https://account.spacestation14.com/ForgotPassword';
+  static const String resendConfirmationUrl =
+      'https://account.spacestation14.com/ResendEmailConfirmation';
+  static const String manageAccountUrl =
+      'https://account.spacestation14.com/Manage';
 
   static Map<String, dynamic> _withString(
     String value,

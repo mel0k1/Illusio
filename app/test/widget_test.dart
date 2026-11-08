@@ -10,10 +10,9 @@ void main() {
     expect(dark.useMaterial3, isTrue);
     expect(light.useMaterial3, isTrue);
     expect(dark.colorScheme.surfaceContainer, isNot(dark.colorScheme.surface));
-    expect(light.colorScheme.surfaceContainer,
-        isNot(light.colorScheme.surface));
-    expect(dark.colorScheme.primaryContainer,
-        isNot(dark.colorScheme.primary));
+    expect(
+        light.colorScheme.surfaceContainer, isNot(light.colorScheme.surface));
+    expect(dark.colorScheme.primaryContainer, isNot(dark.colorScheme.primary));
   });
 
   testWidgets('theme input decoration exposes label and hint', (tester) async {

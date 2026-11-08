@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/hub_server.dart';
 import '../../models/server.dart';
+import '../../models/server_info.dart';
 import '../../models/server_status.dart';
+import '../../models/tags.dart';
 import '../../state/app_controller.dart';
 import '../theme.dart';
 import '../widgets/connect_flow.dart';
@@ -80,6 +82,36 @@ class _ServersScreenState extends State<ServersScreen> {
           if (controller.hideEmpty && server.players <= 0) {
             return false;
           }
+          if (controller.hideFull && server.full) {
+            return false;
+          }
+          final tags = ServerTagInfo.infer(server);
+          final min = controller.filterMinPlayers;
+          if (min > 0 && server.players < min) {
+            return false;
+          }
+          final max = controller.filterMaxPlayers;
+          if (max > 0 && server.players > max) {
+            return false;
+          }
+          final active = controller.filterTags;
+          if (active.isEmpty) {
+            return true;
+          }
+          final categories = <String, List<String>>{};
+          for (final filter in active) {
+            final category = ServerTagInfo.categoryOf(filter);
+            if (category.isEmpty) {
+              continue;
+            }
+            categories.putIfAbsent(category, () => []).add(filter);
+          }
+          for (final filters in categories.values) {
+            final matched = filters.any(tags.contains);
+            if (!matched) {
+              return false;
+            }
+          }
           return true;
         }).toList();
         final totalPlayers = controller.hubServers
@@ -104,7 +136,7 @@ class _ServersScreenState extends State<ServersScreen> {
                             const SizedBox(height: 4),
                             Text(
                               controller.hubError.isEmpty
-                                  ? '${servers.length} серверов · $totalPlayers игроков онлайн'
+                                  ? '${servers.length} из ${controller.hubServers.length} серверов · $totalPlayers игроков онлайн'
                                   : 'список не обновлён',
                               style: Theme.of(context)
                                   .textTheme
@@ -114,6 +146,19 @@ class _ServersScreenState extends State<ServersScreen> {
                           ],
                         ),
                       ),
+                      IconButton.filledTonal(
+                        onPressed: () => _openFilters(context),
+                        icon: Badge.count(
+                          count: controller.filterTags.length,
+                          isLabelVisible: controller.filterTags.isNotEmpty ||
+                              controller.hideFull ||
+                              controller.filterMinPlayers > 0 ||
+                              controller.filterMaxPlayers > 0,
+                          child: const Icon(Icons.tune, size: 22),
+                        ),
+                        tooltip: 'Фильтры',
+                      ),
+                      const SizedBox(width: 8),
                       IconButton.filledTonal(
                         onPressed: controller.hubLoading
                             ? null
@@ -146,6 +191,14 @@ class _ServersScreenState extends State<ServersScreen> {
           ],
         );
       },
+    );
+  }
+
+  Future<void> _openFilters(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => _FilterSheet(controller: widget.controller),
     );
   }
 
@@ -289,6 +342,8 @@ class _ServerTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
+                _PingDot(ping: controller.pings[server.address]),
+                const SizedBox(width: 4),
                 _PlayersBadge(server: server),
                 const SizedBox(width: 4),
                 IconButton(
@@ -301,8 +356,7 @@ class _ServerTile extends StatelessWidget {
                     size: 20,
                   ),
                   color: favorite ? scheme.primary : scheme.onSurfaceVariant,
-                  tooltip:
-                      favorite ? 'Убрать из избранного' : 'В избранное',
+                  tooltip: favorite ? 'Убрать из избранного' : 'В избранное',
                 ),
                 connecting
                     ? const Padding(
@@ -326,6 +380,34 @@ class _ServerTile extends StatelessWidget {
   }
 }
 
+class _PingDot extends StatelessWidget {
+  const _PingDot({required this.ping});
+
+  final ServerPing? ping;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final value = ping;
+    const colors = [
+      Color(0xFF43A047),
+      Color(0xFFFB8C00),
+      Color(0xFFE53935),
+    ];
+    final color = value == null
+        ? scheme.outlineVariant
+        : colors[value.quality.clamp(0, 2)];
+    return Tooltip(
+      message: value == null ? 'пинг не измерен' : 'пинг ${value.label}',
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
 class _PlayersBadge extends StatelessWidget {
   const _PlayersBadge({required this.server});
 
@@ -335,8 +417,8 @@ class _PlayersBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final full = server.softMaxPlayers > 0 &&
-        server.players >= server.softMaxPlayers;
+    final full =
+        server.softMaxPlayers > 0 && server.players >= server.softMaxPlayers;
     final color = server.players <= 0
         ? scheme.onSurfaceVariant
         : full
@@ -372,8 +454,9 @@ class _Monogram extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final source = server.name.isEmpty ? server.address : server.name;
-    final letter =
-        source.isEmpty ? '?' : source.replaceAll(RegExp(r'^\W+'), '')[0].toUpperCase();
+    final letter = source.isEmpty
+        ? '?'
+        : source.replaceAll(RegExp(r'^\W+'), '')[0].toUpperCase();
     return Container(
       width: 40,
       height: 40,
@@ -385,9 +468,9 @@ class _Monogram extends StatelessWidget {
       child: Text(
         letter.isEmpty ? '?' : letter,
         style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(color: scheme.onSecondaryContainer),
+            .textTheme
+            .titleMedium
+            ?.copyWith(color: scheme.onSecondaryContainer),
       ),
     );
   }
@@ -452,13 +535,16 @@ class _ServerDetailsSheet extends StatefulWidget {
 
 class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
   ServerStatusInfo? _status;
+  ServerFullInfo? _info;
   String _error = '';
+  String _infoError = '';
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadInfo();
   }
 
   Future<void> _load() async {
@@ -472,6 +558,20 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
         _status = ServerStatusInfo.fromMap(result['status']);
       } else {
         _error = result['error']?.toString() ?? 'сервер не отвечает';
+      }
+    });
+  }
+
+  Future<void> _loadInfo() async {
+    final result = await widget.controller.fetchInfo(widget.server.address);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (result['ok'] == true) {
+        _info = ServerFullInfo.fromMap(result['info']);
+      } else {
+        _infoError = result['error']?.toString() ?? '';
       }
     });
   }
@@ -507,8 +607,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                     size: 22,
                   ),
                   color: favorite ? scheme.primary : scheme.onSurfaceVariant,
-                  tooltip:
-                      favorite ? 'Убрать из избранного' : 'В избранное',
+                  tooltip: favorite ? 'Убрать из избранного' : 'В избранное',
                 ),
               ],
             ),
@@ -536,7 +635,8 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                     tone: _ChipTone.neutral,
                   ),
                 if (server.preset.isNotEmpty)
-                  _InfoChip(icon: Icons.category_outlined, label: server.preset),
+                  _InfoChip(
+                      icon: Icons.category_outlined, label: server.preset),
                 if (server.map.isNotEmpty)
                   _InfoChip(icon: Icons.map_outlined, label: server.map),
                 if (server.roundId > 0)
@@ -549,6 +649,44 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
               ],
             ),
             const SizedBox(height: 20),
+            if (_info != null && _info!.desc.isNotEmpty) ...[
+              Text(
+                _info!.desc,
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (_info != null && _info!.links.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final link in _info!.links)
+                    ActionChip(
+                      avatar: Icon(
+                        _linkIcon(link.icon),
+                        size: 16,
+                        color: scheme.primary,
+                      ),
+                      label: Text(
+                        link.name.isEmpty ? _linkLabel(link.url) : link.name,
+                      ),
+                      onPressed: () => controller.openUrl(link.url),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (_infoError.isNotEmpty && _info == null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'не удалось получить /info: $_infoError',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (_loading)
               const Center(
                 child: Padding(
@@ -559,7 +697,8 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
             else if (_error.isNotEmpty)
               Text(
                 'Не удалось получить описание: $_error',
-                style: theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
+                style:
+                    theme.textTheme.bodyMedium?.copyWith(color: scheme.error),
               )
             else if (_status != null && _status!.cleanMessage.isNotEmpty)
               Text(
@@ -579,6 +718,29 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
         ),
       ),
     );
+  }
+
+  IconData _linkIcon(String icon) {
+    switch (icon.toLowerCase()) {
+      case 'discord':
+        return Icons.forum_outlined;
+      case 'wiki':
+        return Icons.menu_book_outlined;
+      case 'github':
+        return Icons.code;
+      case 'web':
+        return Icons.language;
+      case 'telegram':
+        return Icons.send_outlined;
+      case 'forum':
+        return Icons.chat_bubble_outline;
+      default:
+        return Icons.link;
+    }
+  }
+
+  String _linkLabel(String url) {
+    return url.replaceFirst(RegExp(r'^https?://'), '').split('/').first;
   }
 
   String _tagLabel(String raw) {
@@ -656,6 +818,159 @@ class _InfoChip extends StatelessWidget {
                 ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late final TextEditingController _min;
+  late final TextEditingController _max;
+
+  @override
+  void initState() {
+    super.initState();
+    _min = TextEditingController(
+      text: widget.controller.filterMinPlayers > 0
+          ? '${widget.controller.filterMinPlayers}'
+          : '',
+    );
+    _max = TextEditingController(
+      text: widget.controller.filterMaxPlayers > 0
+          ? '${widget.controller.filterMaxPlayers}'
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _min.dispose();
+    _max.dispose();
+    super.dispose();
+  }
+
+  void _apply() {
+    final controller = widget.controller;
+    final min = int.tryParse(_min.text.trim()) ?? 0;
+    final max = int.tryParse(_max.text.trim()) ?? 0;
+    controller.setFilterPlayers(min.clamp(0, 9999), max.clamp(0, 9999));
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final controller = widget.controller;
+    final available = ServerTagInfo.availableFilters(controller.hubServers);
+    final selected = List<String>.from(controller.filterTags);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Фильтры серверов', style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 4),
+              Text(
+                'внутри категории фильтры складываются «или», между категориями — «и»',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final filter in available)
+                    FilterChip(
+                      selected: selected.contains(filter),
+                      label: Text(ServerTagInfo.filterLabel(filter)),
+                      onSelected: (value) {
+                        setState(() {
+                          if (value) {
+                            selected.add(filter);
+                          } else {
+                            selected.remove(filter);
+                          }
+                        });
+                        controller.setFilterTags(selected);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _min,
+                      keyboardType: TextInputType.number,
+                      decoration: illusioInput('Игроков от', hint: '0'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _max,
+                      keyboardType: TextInputType.number,
+                      decoration: illusioInput('Игроков до', hint: '∞'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Скрывать полные сервера',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                  ),
+                  Switch(
+                    value: controller.hideFull,
+                    onChanged: controller.setHideFull,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        controller.setFilterTags([]);
+                        controller.setFilterPlayers(0, 0);
+                        controller.setHideFull(false);
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Сбросить'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _apply,
+                      child: const Text('Готово'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
