@@ -133,7 +133,7 @@ class ServerTagInfo {
         }
       }
     }
-    List<String> sorted(List<String> values) => values.toList()..sort();
+    List<String> sorted(Set<String> values) => values.toList()..sort();
     return [
       if (adult) '18+',
       if (whitelist) 'wl',

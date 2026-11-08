@@ -53,7 +53,7 @@ Future<void> bundleFlow(
   if (controller.connecting) {
     return;
   }
-  final fileName = zipPath.split(Platform.separator).last;
+  final fileName = zipPath.split(Platform.pathSeparator).last;
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
