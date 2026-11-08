@@ -4,7 +4,9 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/bindings.dart';
+import '../models/login_info.dart';
 import '../models/server.dart';
+import '../models/server_info.dart';
 import '../models/server_status.dart';
 
 class AppController extends ChangeNotifier {
@@ -23,6 +25,22 @@ class AppController extends ChangeNotifier {
   List<String> launchArgs = [];
   String configError = '';
 
+  LoginInfo? login;
+  bool loginBusy = false;
+  String loginError = '';
+
+  DownloadStateInfo downloadState = const DownloadStateInfo(
+    phase: 'idle',
+    downloaded: 0,
+    total: 0,
+    message: '',
+    error: '',
+    running: false,
+    installDir: '',
+    info: null,
+  );
+  bool connecting = false;
+
   Future<void> _loadConfig() async {
     final result = await Isolate.run(Core.loadConfig);
     if (result['ok'] == true) {
@@ -31,10 +49,40 @@ class AppController extends ChangeNotifier {
       launchArgs = ((config['launch_args'] as List?) ?? const [])
           .map((value) => value.toString())
           .toList();
+      login = LoginInfo.fromMap(config['login']);
     } else {
       configError = result['error']?.toString() ?? '';
     }
     notifyListeners();
+    _refreshSession();
+  }
+
+  Future<void> _refreshSession() async {
+    final current = login;
+    if (current == null) {
+      return;
+    }
+    final payload = jsonEncode({
+      'auth_url': current.authServer.isEmpty
+          ? Core.defaultAuthUrl
+          : current.authServer,
+      'username': current.username,
+      'user_id': current.userId,
+      'token': current.token,
+    });
+    final result = await Isolate.run(() => Core.refreshLogin(payload));
+    if (result['ok'] == true) {
+      final updated = LoginInfo.fromMap(result['login']);
+      if (updated != null) {
+        login = updated;
+        await saveConfig();
+        notifyListeners();
+      }
+    } else {
+      login = null;
+      await saveConfig();
+      notifyListeners();
+    }
   }
 
   Future<void> saveConfig() async {
@@ -42,8 +90,61 @@ class AppController extends ChangeNotifier {
       'install_dir': installDir,
       'launch_args': launchArgs,
       'last_server': selectedServer?.url ?? '',
+      'login': login?.toJson(),
     });
     await Isolate.run(() => Core.saveConfig(payload));
+  }
+
+  Future<Map<String, dynamic>> authenticate(
+    String username,
+    String password,
+    String tfaCode,
+  ) async {
+    if (loginBusy) {
+      return {'ok': false, 'error': 'запрос уже выполняется'};
+    }
+    loginBusy = true;
+    loginError = '';
+    notifyListeners();
+    final payload = jsonEncode({
+      'auth_url': Core.defaultAuthUrl,
+      'username': username,
+      'password': password,
+      'tfa_code': tfaCode,
+    });
+    final result = await Isolate.run(() => Core.authenticate(payload));
+    loginBusy = false;
+    if (result['ok'] == true) {
+      final updated = LoginInfo.fromMap(result['login']);
+      if (updated == null) {
+        loginError = 'сервер авторизации вернул неполный ответ';
+      } else {
+        login = updated;
+        loginError = '';
+        await saveConfig();
+      }
+    } else {
+      loginError = result['error']?.toString() ?? 'авторизация не удалась';
+    }
+    notifyListeners();
+    return result;
+  }
+
+  Future<void> logout() async {
+    final current = login;
+    if (current == null) {
+      return;
+    }
+    final payload = jsonEncode({
+      'auth_url': current.authServer.isEmpty
+          ? Core.defaultAuthUrl
+          : current.authServer,
+      'token': current.token,
+    });
+    login = null;
+    notifyListeners();
+    await saveConfig();
+    await Isolate.run(() => Core.logout(payload));
   }
 
   void addServer(String name, String url) {
@@ -80,8 +181,99 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Map<String, dynamic>> launch() async {
+  Future<Map<String, dynamic>> connect(GameServer server) async {
+    if (connecting) {
+      return {'ok': false, 'error': 'подключение уже идёт'};
+    }
+    connecting = true;
+    downloadState = const DownloadStateInfo(
+      phase: 'info',
+      downloaded: 0,
+      total: 0,
+      message: 'Получаем данные сервера',
+      error: '',
+      running: true,
+      installDir: '',
+      info: null,
+    );
+    notifyListeners();
+
+    final payload = jsonEncode({
+      'server_url': server.url,
+      'install_dir': installDir,
+    });
+    final started = await Isolate.run(() => Core.startDownload(payload));
+    if (started['ok'] != true) {
+      connecting = false;
+      downloadState = DownloadStateInfo(
+        phase: 'error',
+        downloaded: 0,
+        total: 0,
+        message: '',
+        error: started['error']?.toString() ?? 'не удалось начать загрузку',
+        running: false,
+        installDir: '',
+        info: null,
+      );
+      notifyListeners();
+      return started;
+    }
+    return _pollDownload(server);
+  }
+
+  Future<Map<String, dynamic>> _pollDownload(GameServer server) async {
+    while (true) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      final result = await Isolate.run(Core.downloadState);
+      if (result['ok'] != true) {
+        continue;
+      }
+      downloadState = DownloadStateInfo.fromMap(result['state']);
+      notifyListeners();
+      if (downloadState.isDone) {
+        connecting = false;
+        notifyListeners();
+        return _launchAfterDownload(server);
+      }
+      if (downloadState.isError) {
+        connecting = false;
+        notifyListeners();
+        return {'ok': false, 'error': downloadState.error};
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _launchAfterDownload(GameServer server) async {
+    final info = downloadState.info;
+    final current = login;
+    final authAllowed = info?.authUsable == true;
+    final spec = jsonEncode({
+      'install_dir': downloadState.installDir,
+      'args': launchArgs,
+      'username': current?.username ?? '',
+      'server_url': server.url,
+      'connect_address': info?.connectAddress ?? '',
+      'auth_token': authAllowed ? (current?.token ?? '') : '',
+      'auth_user_id': authAllowed ? (current?.userId ?? '') : '',
+      'auth_pubkey': authAllowed ? (info?.authPublicKey ?? '') : '',
+      'auth_server': authAllowed ? (current?.authServer ?? '') : '',
+      'build_download_url': info?.build.downloadUrl ?? '',
+      'build_version': info?.build.version ?? '',
+      'build_fork_id': info?.build.forkId ?? '',
+      'build_hash': info?.build.hash ?? '',
+      'build_engine_version': info?.build.engineVersion ?? '',
+    });
+    final result = await Isolate.run(() => Core.launch(spec));
+    if (result['ok'] != true) {
+      return result;
+    }
+    selectedServer = server;
+    await saveConfig();
+    return result;
+  }
+
+  Future<void> launchFromDirectory() async {
     final spec = jsonEncode({'install_dir': installDir, 'args': launchArgs});
-    return Isolate.run(() => Core.launch(spec));
+    await Isolate.run(() => Core.launch(spec));
   }
 }

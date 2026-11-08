@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:illusio/ui/screens/about_screen.dart';
 import 'package:illusio/ui/theme.dart';
+import 'package:illusio/version.dart';
 
 void main() {
   testWidgets('about screen shows name and version', (tester) async {
@@ -12,7 +13,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Illusio'), findsWidgets);
-    expect(find.textContaining('v0.1.0'), findsOneWidget);
+    expect(find.text('v$appVersion'), findsOneWidget);
     expect(find.textContaining('MIT'), findsOneWidget);
+    expect(find.textContaining('Material 3 Expressive'), findsNothing);
   });
 }

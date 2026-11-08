@@ -11,6 +11,8 @@ typedef FreeNative = Void Function(Pointer<Utf8>);
 class Core {
   Core._();
 
+  static const String defaultAuthUrl = 'https://auth.spacestation14.com/';
+
   static DynamicLibrary _open() {
     if (Platform.isWindows) {
       return DynamicLibrary.open('illusio.dll');
@@ -40,6 +42,27 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _launch = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_launch')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _fetchInfo = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_fetch_info')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _startDownload = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_start_download')
+      .asFunction();
+  static final Pointer<Utf8> Function() _downloadState = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_download_state')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _authenticate = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_authenticate')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _refreshLogin = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_refresh_login')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _checkToken = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_check_token')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _logout = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_logout')
+      .asFunction();
   static final void Function(Pointer<Utf8>) _free = _lib
       .lookup<NativeFunction<FreeNative>>('illusio_free')
       .asFunction();
@@ -61,6 +84,25 @@ class Core {
       _withString(url, _fetchStatus);
 
   static Map<String, dynamic> launch(String spec) => _withString(spec, _launch);
+
+  static Map<String, dynamic> fetchInfo(String url) =>
+      _withString(url, _fetchInfo);
+
+  static Map<String, dynamic> startDownload(String spec) =>
+      _withString(spec, _startDownload);
+
+  static Map<String, dynamic> downloadState() => _run(_downloadState);
+
+  static Map<String, dynamic> authenticate(String json) =>
+      _withString(json, _authenticate);
+
+  static Map<String, dynamic> refreshLogin(String json) =>
+      _withString(json, _refreshLogin);
+
+  static Map<String, dynamic> checkToken(String json) =>
+      _withString(json, _checkToken);
+
+  static Map<String, dynamic> logout(String json) => _withString(json, _logout);
 
   static Map<String, dynamic> _withString(
     String value,

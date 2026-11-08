@@ -1,34 +1,29 @@
 import 'package:flutter/material.dart';
 
 import '../../models/server.dart';
-import '../../models/server_status.dart';
+import '../../models/server_info.dart';
+import '../../state/app_controller.dart';
 import '../theme.dart';
 
 class ServerCard extends StatelessWidget {
   const ServerCard({
     super.key,
     required this.server,
-    required this.selected,
-    required this.loading,
-    required this.status,
-    required this.loadError,
-    required this.onSelect,
-    required this.onLaunch,
-    required this.onDelete,
+    required this.controller,
+    required this.onConnect,
   });
 
   final GameServer server;
-  final bool selected;
-  final bool loading;
-  final ServerStatusInfo? status;
-  final String loadError;
-  final VoidCallback onSelect;
-  final VoidCallback onLaunch;
-  final VoidCallback onDelete;
+  final AppController controller;
+  final VoidCallback onConnect;
+
+  bool get _isCurrent => controller.selectedServer?.url == server.url;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selected = _isCurrent;
+    final connecting = selected && controller.connecting;
     final radius = BorderRadius.circular(28);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -42,7 +37,9 @@ class ServerCard extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: radius,
-          onTap: onSelect,
+          onTap: controller.connecting
+              ? null
+              : () => controller.select(server),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -74,12 +71,13 @@ class ServerCard extends StatelessWidget {
                     const SizedBox(width: 12),
                     _TrailingStatus(
                       selected: selected,
-                      loading: loading,
-                      status: status,
-                      loadError: loadError,
+                      connecting: connecting,
+                      controller: controller,
                     ),
                     IconButton(
-                      onPressed: onDelete,
+                      onPressed: controller.connecting
+                          ? null
+                          : () => controller.removeServer(server),
                       icon: const Icon(Icons.close, size: 18),
                       color: mutedFog,
                       tooltip: 'Убрать из списка',
@@ -92,10 +90,8 @@ class ServerCard extends StatelessWidget {
                   alignment: Alignment.topCenter,
                   child: selected
                       ? _StatusBody(
-                          loading: loading,
-                          status: status,
-                          loadError: loadError,
-                          onLaunch: onLaunch,
+                          controller: controller,
+                          onConnect: onConnect,
                         )
                       : const SizedBox(width: double.infinity),
                 ),
@@ -140,20 +136,18 @@ class _Monogram extends StatelessWidget {
 class _TrailingStatus extends StatelessWidget {
   const _TrailingStatus({
     required this.selected,
-    required this.loading,
-    required this.status,
-    required this.loadError,
+    required this.connecting,
+    required this.controller,
   });
 
   final bool selected;
-  final bool loading;
-  final ServerStatusInfo? status;
-  final String loadError;
+  final bool connecting;
+  final AppController controller;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (loading) {
+    if (connecting) {
       return const SizedBox(
         width: 16,
         height: 16,
@@ -163,14 +157,14 @@ class _TrailingStatus extends StatelessWidget {
     if (!selected) {
       return const Icon(Icons.chevron_right, size: 20, color: mutedFog);
     }
-    final info = status;
+    final info = controller.statusInfo;
     if (info != null) {
       return Text(
         '${info.playerCount} онлайн',
         style: theme.textTheme.bodySmall?.copyWith(color: calmGreen),
       );
     }
-    if (loadError.isNotEmpty) {
+    if (controller.loadError.isNotEmpty) {
       return const Icon(Icons.error_outline, size: 20, color: errorClay);
     }
     return const SizedBox(width: 16);
@@ -179,51 +173,30 @@ class _TrailingStatus extends StatelessWidget {
 
 class _StatusBody extends StatelessWidget {
   const _StatusBody({
-    required this.loading,
-    required this.status,
-    required this.loadError,
-    required this.onLaunch,
+    required this.controller,
+    required this.onConnect,
   });
 
-  final bool loading;
-  final ServerStatusInfo? status;
-  final String loadError;
-  final VoidCallback onLaunch;
+  final AppController controller;
+  final VoidCallback onConnect;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (loading) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Запрашиваем статус',
-              style:
-                  theme.textTheme.bodyMedium?.copyWith(color: mutedFog),
-            ),
-          ],
-        ),
-      );
+    final connecting = controller.connecting;
+    if (connecting) {
+      return _DownloadBody(state: controller.downloadState);
     }
-    final info = status;
+    final info = controller.statusInfo;
     if (info == null) {
-      if (loadError.isEmpty) {
+      if (controller.loadError.isEmpty) {
         return const SizedBox(height: 4);
       }
       return Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Text(
-          'Сервер не ответил: $loadError. Проверьте адрес и повторите попытку.',
-          style:
-              theme.textTheme.bodyMedium?.copyWith(color: errorClay),
+          'Сервер не ответил: ${controller.loadError}. Проверьте адрес и повторите попытку.',
+          style: theme.textTheme.bodyMedium?.copyWith(color: errorClay),
         ),
       );
     }
@@ -258,10 +231,71 @@ class _StatusBody extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: onLaunch,
+            onPressed: onConnect,
             icon: const Icon(Icons.play_arrow),
             label: const Text('Играть'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DownloadBody extends StatelessWidget {
+  const _DownloadBody({required this.state});
+
+  final DownloadStateInfo state;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final failed = state.isError;
+    final color = failed ? errorClay : mutedFog;
+    final showBar = state.phase == 'download' || state.phase == 'extract';
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (!failed && !state.isDone)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  failed ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 18,
+                  color: failed ? errorClay : calmGreen,
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  state.phaseLabel,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                ),
+              ),
+              if (showBar && state.total > 0)
+                Text(
+                  '${state.sizeLabel} / ${state.totalLabel}',
+                  style: theme.textTheme.bodySmall?.copyWith(color: mutedFog),
+                ),
+            ],
+          ),
+          if (showBar) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: state.progress,
+                minHeight: 6,
+                backgroundColor: edgeColor,
+              ),
+            ),
+          ],
         ],
       ),
     );

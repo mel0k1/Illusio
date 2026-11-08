@@ -37,7 +37,7 @@ class AboutScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Лаунчер для Space Station 14. Ядро на Rust получает статус серверов, хранит настройки и запускает клиент. Интерфейс собран на Flutter по мотивам Material 3 Expressive.',
+                  'Лаунчер для Space Station 14. Ядро на Rust получает статус серверов, скачивает и обновляет клиент, хранит настройки и запускает игру. Интерфейс собран на Flutter.',
                   style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
                   textAlign: TextAlign.center,
                 ),

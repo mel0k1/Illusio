@@ -78,8 +78,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _installDir,
-            decoration:
-                illusioInput('Каталог с Robust.Client', hint: '/opt/ss14'),
+            decoration: illusioInput(
+              'Каталог для клиента',
+              hint: 'по умолчанию — системный каталог данных',
+            ),
           ),
           const SizedBox(height: 12),
           TextField(

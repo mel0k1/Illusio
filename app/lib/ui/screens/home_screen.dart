@@ -5,6 +5,7 @@ import '../theme.dart';
 import '../widgets/illusio_logo.dart';
 import '../widgets/server_card.dart';
 import 'about_screen.dart';
+import 'login_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -34,6 +35,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openAbout() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
+    );
+  }
+
+  void _openAccount() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginScreen(controller: _controller),
+      ),
     );
   }
 
@@ -85,15 +94,19 @@ class _HomeScreenState extends State<HomeScreen> {
     urlController.dispose();
   }
 
-  Future<void> _launchGame() async {
+  Future<void> _connect() async {
+    final server = _controller.selectedServer;
+    if (server == null || _controller.connecting) {
+      return;
+    }
     final messenger = ScaffoldMessenger.of(context);
-    final result = await _controller.launch();
+    final result = await _controller.connect(server);
     if (result['ok'] == true) {
-      messenger.showSnackBar(illusioSnackBar('Игра запущена'));
+      messenger.showSnackBar(illusioSnackBar('Клиент запущен'));
     } else {
       messenger.showSnackBar(
         illusioSnackBar(
-          result['error']?.toString() ?? 'не удалось запустить игру',
+          result['error']?.toString() ?? 'не удалось подключиться',
         ),
       );
     }
@@ -111,6 +124,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          ListenableBuilder(
+            listenable: _controller,
+            builder: (context, _) {
+              final name = _controller.login?.username;
+              if (name == null) {
+                return IconButton(
+                  onPressed: _openAccount,
+                  icon: const Icon(Icons.person_outline),
+                  tooltip: 'Аккаунт SS14',
+                );
+              }
+              return TextButton.icon(
+                onPressed: _openAccount,
+                icon: const Icon(Icons.person, size: 18),
+                label: Text(
+                  name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            },
+          ),
           IconButton(
             onPressed: _openSettings,
             icon: const Icon(Icons.tune),
@@ -145,16 +179,10 @@ class _HomeScreenState extends State<HomeScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final server = _controller.servers[index];
-        final selected = _controller.selectedServer?.url == server.url;
         return ServerCard(
           server: server,
-          selected: selected,
-          loading: selected && _controller.loading,
-          status: selected ? _controller.statusInfo : null,
-          loadError: selected ? _controller.loadError : '',
-          onSelect: () => _controller.select(server),
-          onLaunch: _launchGame,
-          onDelete: () => _controller.removeServer(server),
+          controller: _controller,
+          onConnect: _connect,
         );
       },
     );
@@ -173,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text('Здесь пока пусто', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              'Добавьте первый сервер: адрес можно скопировать из любого списка серверов SS14.',
+              'Добавьте первый сервер: адрес можно скопировать из любого списка серверов SS14. Клиент скачается сам при первом подключении.',
               style: theme.textTheme.bodyMedium?.copyWith(color: mutedFog),
               textAlign: TextAlign.center,
             ),
