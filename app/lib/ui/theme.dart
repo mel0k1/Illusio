@@ -77,7 +77,12 @@ const Map<String, Color> inkPresetSeeds = {
   'copperNight': Color(0xFFFFB77E),
 };
 
-Color themeDot(String id) {
+Color themeDot(String id, {int customColor = 0}) {
+  if (id == 'custom') {
+    return customColor == 0
+        ? const Color(0xFF8A8A91)
+        : Color(0xFF000000 | customColor);
+  }
   final seed = inkPresetSeeds[id];
   if (seed != null) {
     return seed;
@@ -87,6 +92,38 @@ Color themeDot(String id) {
     'light' => const Color(0xFF131315),
     _ => const Color(0xFF8A8A91),
   };
+}
+
+double cornerScale(String corners) => switch (corners) {
+      'compact' => 0.7,
+      'round' => 1.35,
+      _ => 1.0,
+    };
+
+TextTheme _fontTheme(String font, TextTheme base) => switch (font) {
+      'system' => base,
+      'inter' => GoogleFonts.interTextTheme(base),
+      'manrope' => GoogleFonts.manropeTextTheme(base),
+      'nunito' => GoogleFonts.nunitoTextTheme(base),
+      'jetbrains' => GoogleFonts.jetBrainsMonoTextTheme(base),
+      _ => GoogleFonts.robotoFlexTextTheme(base),
+    };
+
+ColorScheme _schemeFor(
+  Brightness brightness,
+  String preset,
+  int customColor,
+) {
+  if (preset == 'custom' && customColor != 0) {
+    return ColorScheme.fromSeed(
+      seedColor: Color(0xFF000000 | customColor),
+      brightness: brightness,
+    );
+  }
+  if (brightness == Brightness.dark) {
+    return _presetScheme(preset);
+  }
+  return inkLightScheme;
 }
 
 ColorScheme _presetScheme(String preset) {
@@ -108,10 +145,15 @@ const Curve expressCurve = Easing.emphasizedDecelerate;
 const Curve settleCurve = Easing.standard;
 const Curve exitCurve = Easing.emphasizedAccelerate;
 
-ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
-  final scheme = brightness == Brightness.dark
-      ? _presetScheme(preset)
-      : inkLightScheme;
+ThemeData buildIllusioTheme(
+  Brightness brightness, {
+  String preset = 'dark',
+  String font = 'default',
+  String corners = 'normal',
+  int customColor = 0,
+}) {
+  final scheme = _schemeFor(brightness, preset, customColor);
+  final scale = cornerScale(corners);
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -119,7 +161,8 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
     scaffoldBackgroundColor: scheme.surface,
     splashFactory: InkSparkle.splashFactory,
   );
-  final textTheme = GoogleFonts.robotoFlexTextTheme(
+  final textTheme = _fontTheme(
+    font,
     theme.textTheme
         .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface),
   );
@@ -140,8 +183,8 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
     labelMedium: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
   );
 
-  final stadium =
-      RoundedRectangleBorder(borderRadius: BorderRadius.circular(24));
+  final stadium = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(24 * scale));
   final buttonPadding =
       const EdgeInsets.symmetric(horizontal: 24, vertical: 14);
 
@@ -151,20 +194,22 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
     cardTheme: CardThemeData(
       color: scheme.surfaceContainerLow,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20 * scale)),
       margin: EdgeInsets.zero,
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: scheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28 * scale)),
       titleTextStyle: body.titleLarge,
       contentTextStyle: body.bodyMedium,
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: scheme.surfaceContainerLow,
       modalBackgroundColor: scheme.surfaceContainerLow,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28 * scale)),
       ),
       showDragHandle: true,
       dragHandleColor: scheme.outlineVariant,
@@ -205,7 +250,7 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(20 * scale),
         )),
         side: WidgetStatePropertyAll(BorderSide(color: scheme.outlineVariant)),
         textStyle: WidgetStatePropertyAll(body.labelLarge),
@@ -244,7 +289,8 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
     chipTheme: theme.chipTheme.copyWith(
       backgroundColor: scheme.surfaceContainerHigh,
       side: BorderSide(color: scheme.outlineVariant),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10 * scale)),
       labelStyle: body.labelMedium,
     ),
     snackBarTheme: SnackBarThemeData(
@@ -252,7 +298,8 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
       backgroundColor: scheme.inverseSurface,
       contentTextStyle:
           body.bodyMedium?.copyWith(color: scheme.onInverseSurface),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16 * scale)),
     ),
     dividerTheme:
         DividerThemeData(color: scheme.outlineVariant, thickness: 1, space: 1),
@@ -263,23 +310,23 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
           ?.copyWith(color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18 * scale),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18 * scale),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18 * scale),
         borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18 * scale),
         borderSide: BorderSide(color: scheme.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18 * scale),
         borderSide: BorderSide(color: scheme.error, width: 2),
       ),
     ),
@@ -292,19 +339,21 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
       stopIndicatorRadius: 4,
     ),
     listTileTheme: ListTileThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16 * scale)),
       iconColor: scheme.onSurfaceVariant,
     ),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
         color: scheme.inverseSurface,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(10 * scale),
       ),
       textStyle: body.labelMedium?.copyWith(color: scheme.onInverseSurface),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: scheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20 * scale)),
       textStyle: body.bodyMedium,
       elevation: 6,
     ),
@@ -312,7 +361,7 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
       menuStyle: MenuStyle(
         backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(20 * scale),
         )),
       ),
     ),

@@ -176,6 +176,35 @@ class S {
   String get languageLabel => ru ? 'Язык' : 'Language';
   String get languageHint =>
       ru ? 'интерфейс приложения и подписи' : 'app interface and labels';
+  String get tabNetwork => ru ? 'Сеть' : 'Network';
+  String get tabSystem => ru ? 'Система' : 'System';
+  String get themeCustom => ru ? 'Своё' : 'Custom';
+  String get customColorLabel => ru ? 'Свой цвет' : 'Custom color';
+  String get customColorHint => ru
+      ? 'выберите акцент или введите HEX'
+      : 'pick an accent or enter a HEX value';
+  String get customColorInvalid =>
+      ru ? 'нужен HEX вида #7C5CFF' : 'enter a HEX value like #7C5CFF';
+  String get dockLabel => ru ? 'Панель' : 'Panel';
+  String get dockHint => ru
+      ? 'где находится панель навигации'
+      : 'where the navigation panel lives';
+  String get dockBottom => ru ? 'Снизу' : 'Bottom';
+  String get dockLeft => ru ? 'Слева' : 'Left';
+  String get dockRight => ru ? 'Справа' : 'Right';
+  String get cornersLabel => ru ? 'Углы' : 'Corners';
+  String get cornersHint => ru
+      ? 'скругление карточек, кнопок и панели'
+      : 'rounding for cards, buttons and the panel';
+  String get cornersCompact => ru ? 'Строже' : 'Sharper';
+  String get cornersNormal => ru ? 'Обычные' : 'Normal';
+  String get cornersRound => ru ? 'Мягче' : 'Softer';
+  String get fontLabel => ru ? 'Шрифт' : 'Font';
+  String get fontHint => ru
+      ? 'шрифт интерфейса, загружается по сети'
+      : 'interface font, downloaded on demand';
+  String get fontDefault => ru ? 'Стандартный' : 'Default';
+  String get fontSystem => ru ? 'Системный' : 'System';
   String get gameSection => ru ? 'Игра' : 'Game';
   String get fullscreen => ru ? 'Полноэкранный режим' : 'Fullscreen';
   String get serverListSection => ru ? 'Список серверов' : 'Server list';

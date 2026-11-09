@@ -38,6 +38,10 @@ class AppController extends ChangeNotifier {
   bool hideFull = false;
   bool fullscreen = false;
   bool vsync = true;
+  String dockSide = 'bottom';
+  String corners = 'normal';
+  String font = 'default';
+  int customColor = 0;
   List<String> hubs = [];
   String guestUsername = '';
   String usernameOverride = '';
@@ -124,6 +128,10 @@ class AppController extends ChangeNotifier {
 
   bool get isGuest => login != null && login!.token.isEmpty;
 
+  bool get dockIsBottom => dockSide == 'bottom';
+
+  double get listBottomPad => dockIsBottom ? 110.0 : 28.0;
+
   String get effectiveUsername {
     if (isGuest) {
       final guest = guestUsername.trim();
@@ -165,6 +173,25 @@ class AppController extends ChangeNotifier {
       if (theme == 'system' || theme.isEmpty) {
         theme = 'dark';
       }
+      dockSide = ['bottom', 'left', 'right']
+              .contains(config['dock_side']?.toString())
+          ? config['dock_side'].toString()
+          : 'bottom';
+      corners = ['compact', 'normal', 'round']
+              .contains(config['corners']?.toString())
+          ? config['corners'].toString()
+          : 'normal';
+      font = [
+        'default',
+        'system',
+        'inter',
+        'manrope',
+        'nunito',
+        'jetbrains',
+      ].contains(config['font']?.toString())
+          ? config['font'].toString()
+          : 'default';
+      customColor = (config['custom_color'] as num?)?.toInt() ?? 0;
       language = config['language']?.toString() ?? 'ru';
       hideEmpty = config['hide_empty'] == true;
       hideFull = config['hide_full'] == true;
@@ -504,6 +531,10 @@ class AppController extends ChangeNotifier {
       'favorites': favorites.map((value) => value.toJson()).toList(),
       'accounts': accounts.map((value) => value.toJson()).toList(),
       'theme': theme,
+      'dock_side': dockSide,
+      'corners': corners,
+      'font': font,
+      'custom_color': customColor,
       'hide_empty': hideEmpty,
       'hide_full': hideFull,
       'fullscreen': fullscreen,
@@ -905,6 +936,39 @@ class AppController extends ChangeNotifier {
 
   void setLanguage(String value) {
     language = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setDockSide(String value) {
+    dockSide = ['bottom', 'left', 'right'].contains(value) ? value : 'bottom';
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setCorners(String value) {
+    corners = ['compact', 'normal', 'round'].contains(value) ? value : 'normal';
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setFont(String value) {
+    font = [
+      'default',
+      'system',
+      'inter',
+      'manrope',
+      'nunito',
+      'jetbrains',
+    ].contains(value)
+        ? value
+        : 'default';
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setCustomColor(int value) {
+    customColor = value & 0xFFFFFF;
     notifyListeners();
     saveConfig();
   }

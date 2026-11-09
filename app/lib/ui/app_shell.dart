@@ -190,12 +190,13 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final s = S.of(context);
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final labels = dockItems.map((item) => item.label(s)).toList();
+        final side = widget.controller.dockSide;
+        final content = Column(
           children: [
             _SlimBar(
               controller: widget.controller,
@@ -208,15 +209,55 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
           ],
-        ),
-      ),
-      extendBody: true,
-      bottomNavigationBar: IllusioDock(
-        index: _index,
-        scheme: scheme,
-        labels: dockItems.map((item) => item.label(s)).toList(),
-        onSelect: (value) => setState(() => _index = value),
-      ),
+        );
+        final onSelect = (int value) => setState(() => _index = value);
+        final body = switch (side) {
+          'left' => Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
+                  child: _Rail(
+                    index: _index,
+                    labels: labels,
+                    corners: widget.controller.corners,
+                    onSelect: onSelect,
+                  ),
+                ),
+                Expanded(child: content),
+              ],
+            ),
+          'right' => Row(
+              children: [
+                Expanded(child: content),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+                  child: _Rail(
+                    index: _index,
+                    labels: labels,
+                    corners: widget.controller.corners,
+                    onSelect: onSelect,
+                  ),
+                ),
+              ],
+            ),
+          _ => content,
+        };
+        return Scaffold(
+          body: SafeArea(
+            bottom: side != 'bottom',
+            child: body,
+          ),
+          extendBody: side == 'bottom',
+          bottomNavigationBar: side == 'bottom'
+              ? _BottomDock(
+                  index: _index,
+                  labels: labels,
+                  corners: widget.controller.corners,
+                  onSelect: onSelect,
+                )
+              : null,
+        );
+      },
     );
   }
 }
@@ -354,53 +395,62 @@ class _PageStack extends StatelessWidget {
   }
 }
 
-class IllusioDock extends StatelessWidget {
-  const IllusioDock({
-    super.key,
+class _BottomDock extends StatelessWidget {
+  const _BottomDock({
     required this.index,
-    required this.scheme,
     required this.labels,
+    required this.corners,
     required this.onSelect,
   });
 
   final int index;
-  final ColorScheme scheme;
   final List<String> labels;
+  final String corners;
   final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sc = cornerScale(corners);
     final shadowAlpha = scheme.brightness == Brightness.dark ? 0.35 : 0.12;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-      child: Container(
-        height: 68,
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(34),
-          border: Border.all(color: scheme.outlineVariant),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: shadowAlpha),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < dockItems.length; i++)
-              Expanded(
-                child: _DockButton(
-                  item: dockItems[i],
-                  label: labels[i],
-                  selected: i == index,
-                  scheme: scheme,
-                  onTap: () => onSelect(i),
-                ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(32 * sc),
+                border: Border.all(color: scheme.outlineVariant),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: shadowAlpha),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-          ],
-        ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < dockItems.length; i++)
+                    _DockButton(
+                      item: dockItems[i],
+                      label: labels[i],
+                      selected: i == index,
+                      scheme: scheme,
+                      scale: sc,
+                      onTap: () => onSelect(i),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -412,6 +462,7 @@ class _DockButton extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.scheme,
+    required this.scale,
     required this.onTap,
   });
 
@@ -419,6 +470,7 @@ class _DockButton extends StatelessWidget {
   final String label;
   final bool selected;
   final ColorScheme scheme;
+  final double scale;
   final VoidCallback onTap;
 
   @override
@@ -426,70 +478,193 @@ class _DockButton extends StatelessWidget {
     final foreground =
         selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 3),
       child: AnimatedContainer(
         duration: spatialDefault,
         curve: springCurve,
+        height: 48,
+        padding: EdgeInsets.symmetric(horizontal: selected ? 16 : 10),
         decoration: BoxDecoration(
           color: selected ? scheme.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(24 * scale),
         ),
         child: Material(
           type: MaterialType.transparency,
           child: InkWell(
             customBorder: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(24 * scale),
             ),
             onTap: onTap,
-            child: AnimatedScale(
-              scale: selected ? 1.0 : 0.96,
-              duration: spatialDefault,
-              curve: springCurve,
-              child: AnimatedSwitcher(
-                duration: spatialFast,
-                switchInCurve: expressCurve,
-                switchOutCurve: exitCurve,
-                transitionBuilder: (child, animation) => ScaleTransition(
-                  scale: animation,
-                  child: FadeTransition(opacity: animation, child: child),
-                ),
-                child: selected
-                    ? Row(
-                        key: const ValueKey(true),
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          AnimatedRotation(
-                            turns: 0.125,
-                            duration: spatialDefault,
-                            curve: springCurve,
-                            child: Icon(
-                              item.selectedIcon,
-                              size: 22,
-                              color: foreground,
-                            ),
+            child: AnimatedSwitcher(
+              duration: spatialFast,
+              switchInCurve: expressCurve,
+              switchOutCurve: exitCurve,
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: animation,
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: selected
+                  ? Row(
+                      key: const ValueKey(true),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedRotation(
+                          turns: 0.125,
+                          duration: spatialDefault,
+                          curve: springCurve,
+                          child: Icon(
+                            item.selectedIcon,
+                            size: 20,
+                            color: foreground,
                           ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              label,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(color: foreground),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Icon(
-                        item.icon,
-                        key: const ValueKey(false),
-                        size: 24,
-                        color: foreground,
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          label,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(color: foreground),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    )
+                  : Tooltip(
+                      key: const ValueKey(false),
+                      message: label,
+                      child:
+                          Icon(item.icon, size: 24, color: foreground),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Rail extends StatelessWidget {
+  const _Rail({
+    required this.index,
+    required this.labels,
+    required this.corners,
+    required this.onSelect,
+  });
+
+  final int index;
+  final List<String> labels;
+  final String corners;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sc = cornerScale(corners);
+    final shadowAlpha = scheme.brightness == Brightness.dark ? 0.35 : 0.12;
+    return Container(
+      width: 96,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(28 * sc),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: shadowAlpha),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const IllusioLogo(size: 26),
+          const SizedBox(height: 18),
+          for (var i = 0; i < dockItems.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: _RailButton(
+                item: dockItems[i],
+                label: labels[i],
+                selected: i == index,
+                scheme: scheme,
+                scale: sc,
+                onTap: () => onSelect(i),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RailButton extends StatelessWidget {
+  const _RailButton({
+    required this.item,
+    required this.label,
+    required this.selected,
+    required this.scheme,
+    required this.scale,
+    required this.onTap,
+  });
+
+  final DockItem item;
+  final String label;
+  final bool selected;
+  final ColorScheme scheme;
+  final double scale;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground =
+        selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    return AnimatedContainer(
+      duration: spatialDefault,
+      curve: springCurve,
+      width: 80,
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        color: selected ? scheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(18 * scale),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18 * scale),
+          ),
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedScale(
+                scale: selected ? 1.0 : 0.94,
+                duration: spatialDefault,
+                curve: springCurve,
+                child: AnimatedRotation(
+                  turns: selected ? 0.125 : 0,
+                  duration: spatialDefault,
+                  curve: springCurve,
+                  child: Icon(
+                    selected ? item.selectedIcon : item.icon,
+                    size: 22,
+                    color: foreground,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: foreground),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),

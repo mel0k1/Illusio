@@ -61,7 +61,6 @@ class _IllusioAppState extends State<IllusioApp> {
       listenable: _controller,
       builder: (context, _) {
         final mode = switch (_controller.theme) {
-          'dark' => ThemeMode.dark,
           'light' => ThemeMode.light,
           _ => ThemeMode.dark,
         };
@@ -72,10 +71,16 @@ class _IllusioAppState extends State<IllusioApp> {
             theme: buildIllusioTheme(
               Brightness.light,
               preset: _controller.theme,
+              font: _controller.font,
+              corners: _controller.corners,
+              customColor: _controller.customColor,
             ),
             darkTheme: buildIllusioTheme(
               Brightness.dark,
               preset: _controller.theme,
+              font: _controller.font,
+              corners: _controller.corners,
+              customColor: _controller.customColor,
             ),
             themeMode: mode,
             home: AppShell(controller: _controller),

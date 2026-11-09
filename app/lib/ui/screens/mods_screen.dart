@@ -52,7 +52,7 @@ class _ModsScreenState extends State<ModsScreen> {
             controller.resPacksEnabled.length;
         final empty = controller.mods.isEmpty && packs.isEmpty;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
+          padding: EdgeInsets.fromLTRB(20, 4, 20, controller.listBottomPad),
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,18 +207,25 @@ class _ModsScreenState extends State<ModsScreen> {
   }
 }
 
-class _HowItWorksCard extends StatelessWidget {
+class _HowItWorksCard extends StatefulWidget {
   const _HowItWorksCard({required this.controller});
 
   final AppController controller;
+
+  @override
+  State<_HowItWorksCard> createState() => _HowItWorksCardState();
+}
+
+class _HowItWorksCardState extends State<_HowItWorksCard> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final s = S.of(context);
+    final controller = widget.controller;
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: scheme.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(28),
@@ -227,93 +234,132 @@ class _HowItWorksCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.extension, size: 20, color: scheme.primary),
-              const SizedBox(width: 8),
-              Text(s.howItWorks, style: theme.textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.zipHowText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.dllHowText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.subverterHowText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.respackHowText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.dumperHowText,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 14),
-          SelectableText(
-            controller.modsPath.isEmpty ? '…' : controller.modsPath,
-            style: theme.textTheme.bodySmall,
-          ),
-          if (controller.resPacksPath.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            SelectableText(
-              controller.resPacksPath,
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: controller.modsPath.isEmpty
-                    ? null
-                    : () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        await controller.openModsDir();
-                        messenger.showSnackBar(illusioSnackBar(s.folderOpened));
-                      },
-                icon: const Icon(Icons.folder_open, size: 20),
-                label: Text(s.openFolder),
+          InkWell(
+            borderRadius: BorderRadius.circular(28),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(Icons.extension, size: 20, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(s.howItWorks,
+                        style: theme.textTheme.titleMedium),
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: spatialDefault,
+                    curve: springCurve,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 22,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              OutlinedButton.icon(
-                onPressed: controller.resPacksPath.isEmpty
-                    ? null
-                    : () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        await controller.openResPacksDir();
-                        messenger.showSnackBar(illusioSnackBar(s.folderOpened));
-                      },
-                icon: const Icon(Icons.palette_outlined, size: 20),
-                label: Text(s.openResPacks),
+            ),
+          ),
+          AnimatedCrossFade(
+            duration: spatialFast,
+            sizeCurve: expressCurve,
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            firstChild: const SizedBox(width: double.infinity),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.zipHowText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.dllHowText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.subverterHowText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.respackHowText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.dumperHowText,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SelectableText(
+                    controller.modsPath.isEmpty ? '…' : controller.modsPath,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  if (controller.resPacksPath.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      controller.resPacksPath,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: controller.modsPath.isEmpty
+                            ? null
+                            : () async {
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
+                                await controller.openModsDir();
+                                messenger.showSnackBar(
+                                    illusioSnackBar(s.folderOpened));
+                              },
+                        icon: const Icon(Icons.folder_open, size: 20),
+                        label: Text(s.openFolder),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: controller.resPacksPath.isEmpty
+                            ? null
+                            : () async {
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
+                                await controller.openResPacksDir();
+                                messenger.showSnackBar(
+                                    illusioSnackBar(s.folderOpened));
+                              },
+                        icon: const Icon(Icons.palette_outlined, size: 20),
+                        label: Text(s.openResPacks),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => controller.loadMods(),
+                        icon: const Icon(Icons.refresh, size: 20),
+                        label: Text(s.refresh),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              OutlinedButton.icon(
-                onPressed: () => controller.loadMods(),
-                icon: const Icon(Icons.refresh, size: 20),
-                label: Text(s.refresh),
-              ),
-            ],
+            ),
           ),
         ],
       ),

@@ -242,7 +242,7 @@ class _ServersScreenState extends State<ServersScreen> {
       },
       color: scheme.primary,
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, controller.listBottomPad),
         itemCount: servers.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {

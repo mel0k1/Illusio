@@ -23,4 +23,20 @@ void main() {
     expect(decoration.labelText, 'Адрес');
     expect(decoration.hintText, 'ss14://example.com');
   });
+
+  testWidgets('custom color and corners reshape the theme', (tester) async {
+    final custom = buildIllusioTheme(
+      Brightness.dark,
+      preset: 'custom',
+      customColor: 0x7C5CFF,
+    );
+    expect(custom.colorScheme.primary, isNot(inkDarkScheme.primary));
+    final compact = buildIllusioTheme(Brightness.dark, corners: 'compact');
+    final round = buildIllusioTheme(Brightness.dark, corners: 'round');
+    final compactRadius =
+        (compact.cardTheme.shape as RoundedRectangleBorder).borderRadius;
+    final roundRadius =
+        (round.cardTheme.shape as RoundedRectangleBorder).borderRadius;
+    expect(roundRadius.bottomLeft.x, greaterThan(compactRadius.bottomLeft.x));
+  });
 }

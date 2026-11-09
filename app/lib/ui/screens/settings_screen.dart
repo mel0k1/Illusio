@@ -21,22 +21,47 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _installDir = TextEditingController();
   final TextEditingController _launchArgs = TextEditingController();
   final TextEditingController _guest = TextEditingController();
   final TextEditingController _override = TextEditingController();
   final TextEditingController _hwid = TextEditingController();
   final TextEditingController _rpcFakeName = TextEditingController();
+  final TextEditingController _hex = TextEditingController();
+  late final TabController _tabs = TabController(length: 5, vsync: this);
   bool _proxyBusy = false;
   String _proxyResult = '';
   Color _proxyResultColor = Colors.transparent;
   String _configPath = '';
   bool _pathsLoaded = false;
 
+  static const List<int> _customSwatches = [
+    0xFFF2F2F3,
+    0xFFB4B4BA,
+    0xFFFFB4A9,
+    0xFFFFB77E,
+    0xFFFFD65C,
+    0xFF9CD69D,
+    0xFF7FD1C3,
+    0xFFAAC7FF,
+    0xFF7986CB,
+    0xFFD0B4FF,
+    0xFFF3B4D6,
+    0xFFE57373,
+    0xFF4DB6AC,
+    0xFFC9A86A,
+  ];
+
   @override
   void initState() {
     super.initState();
+    _tabs.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     _restore();
   }
 
@@ -72,6 +97,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _override.dispose();
     _hwid.dispose();
     _rpcFakeName.dispose();
+    _hex.dispose();
+    _tabs.dispose();
     super.dispose();
   }
 
@@ -353,7 +380,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (s.themeEmeraldDusk, 'emeraldDusk', themeDot('emeraldDusk')),
       (s.themeCopperNight, 'copperNight', themeDot('copperNight')),
       (s.themeLight, 'light', themeDot('light')),
+      (
+        s.themeCustom,
+        'custom',
+        themeDot('custom', customColor: controller.customColor)
+      ),
     ];
+  }
+
+  void _applyHex(String value) {
+    final raw = value.trim().replaceAll('#', '');
+    final parsed = raw.length == 6 ? int.tryParse(raw, radix: 16) : null;
+    if (parsed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        illusioSnackBar(S.of(context).customColorInvalid),
+      );
+      return;
+    }
+    widget.controller.setCustomColor(parsed);
   }
 
   Future<void> _clearCache() async {
@@ -384,844 +428,1098 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, _) {
         final controller = widget.controller;
         final s = S.of(context);
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
+        final pad = controller.listBottomPad;
+        return Column(
           children: [
-            _PageTitle(
-              title: s.settingsTitle,
-              subtitle: s.settingsSubtitle,
-            ),
-            const SizedBox(height: 24),
-            _SectionLabel(s.appearance),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.theme, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.themeHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final preset in _themeChips(controller))
-                        ChoiceChip(
-                          label: Text(preset.$1),
-                          selected: controller.theme == preset.$2,
-                          onSelected: (_) => controller.setTheme(preset.$2),
-                          avatar: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              color: preset.$3,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: scheme.outlineVariant,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Text(s.language, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.languageHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 14),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'ru',
-                        icon: Icon(Icons.language, size: 18),
-                        label: Text('RU'),
-                      ),
-                      ButtonSegment(
-                        value: 'en',
-                        icon: Icon(Icons.language, size: 18),
-                        label: Text('EN'),
-                      ),
-                    ],
-                    selected: {
-                      controller.language == 'en' ? 'en' : 'ru'
-                    },
-                    onSelectionChanged: (selection) =>
-                        controller.setLanguage(selection.first),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.gameSection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                children: [
-                  _SwitchRow(
-                    title: s.fullscreen,
-                    subtitle: 'display.windowmode',
-                    value: controller.fullscreen,
-                    onChanged: controller.setFullscreen,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: 'vsync',
-                    subtitle: 'display.vsync',
-                    value: controller.vsync,
-                    onChanged: controller.setVsync,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.serverListSection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SwitchRow(
-                    title: s.hideEmptyServers,
-                    subtitle: s.hideEmptyHint,
-                    value: controller.hideEmpty,
-                    onChanged: controller.setHideEmpty,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.hideFullServers,
-                    subtitle: s.hideFullHint,
-                    value: controller.hideFull,
-                    onChanged: controller.setHideFull,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(s.hubs, style: theme.textTheme.titleMedium),
-                  Text(
-                    s.hubsHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final hub in controller.hubs)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              hub,
-                              style: theme.textTheme.bodyMedium,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => controller.setHubs(
-                              controller.hubs
-                                  .where((value) => value != hub)
-                                  .toList(),
-                            ),
-                            icon: const Icon(Icons.close, size: 18),
-                            tooltip: s.removeHub,
-                          ),
-                        ],
-                      ),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: _addHub,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(s.addHub),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.clientSection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _installDir,
-                    decoration: illusioInput(
-                      s.installDir,
-                      hint: s.installDirHint,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _launchArgs,
-                    decoration: illusioInput(
-                      s.launchArgs,
-                      hint: '--profile server',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(s.enginesSection, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.enginesHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => controller.setEngineOverride(''),
-                    child: Row(
-                      children: [
-                        Icon(
-                          controller.engineOverride.isEmpty
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_off,
-                          size: 20,
-                          color: controller.engineOverride.isEmpty
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            s.enginesStandard,
-                            style: theme.textTheme.bodyMedium,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (final engine in controller.customEngines)
-                    InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => controller
-                          .setEngineOverride(controller.engineZipPath(engine)),
-                      child: Row(
-                        children: [
-                          Icon(
-                            controller.engineOverride ==
-                                    controller.engineZipPath(engine)
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_off,
-                            size: 20,
-                            color: controller.engineOverride ==
-                                    controller.engineZipPath(engine)
-                                ? scheme.primary
-                                : scheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              engine.version.isEmpty
-                                  ? engine.name
-                                  : '${engine.name} · ${s.engineVersioned(engine.version)}',
-                              style: theme.textTheme.bodyMedium,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: s.enginesDelete,
-                            icon: const Icon(Icons.delete_outline, size: 20),
-                            onPressed: controller.enginesBusy
-                                ? null
-                                : () => controller.removeEngine(engine.id),
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (controller.customEngines.isEmpty)
-                    Text(
-                      s.enginesEmpty,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                  if (controller.enginesError.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      s.enginesFailed(controller.enginesError),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.error),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: controller.enginesBusy
-                            ? null
-                            : _importEngineZip,
-                        icon: const Icon(Icons.archive_outlined, size: 18),
-                        label: Text(
-                          controller.enginesBusy
-                              ? s.enginesImporting
-                              : s.enginesImportZip,
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: controller.enginesBusy
-                            ? null
-                            : _importEngineFolder,
-                        icon: const Icon(Icons.folder_open_outlined, size: 18),
-                        label: Text(s.enginesImportFolder),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _SwitchRow(
-                    title: s.clientLogs,
-                    subtitle: s.clientLogsHint,
-                    value: controller.clientLogs,
-                    onChanged: controller.setClientLogs,
+                  _PageTitle(
+                    title: s.settingsTitle,
+                    subtitle: s.settingsSubtitle,
                   ),
                   const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.tonal(
-                      onPressed: _saveClient,
-                      child: Text(s.save),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.proxySection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.proxyProfiles, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.proxyProfilesHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 12),
-                  if (controller.proxyProfiles.isEmpty)
-                    Text(
-                      s.proxyNoProfiles,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    )
-                  else
-                    for (final profile in controller.proxyProfiles)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: ListTile(
-                          onTap: () =>
-                              controller.selectProxyProfile(profile.id),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          tileColor: scheme.surfaceContainerLow,
-                          leading: Icon(
-                            controller.selectedProxyProfile?.id == profile.id
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_off,
-                            size: 20,
-                            color: controller.selectedProxyProfile?.id ==
-                                    profile.id
-                                ? scheme.primary
-                                : scheme.onSurfaceVariant,
-                          ),
-                          title: Text(
-                            profile.name,
-                            style: theme.textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '${profile.host}:${profile.port}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _editProxyProfile(profile),
-                                icon: const Icon(Icons.edit_outlined,
-                                    size: 18),
-                                tooltip: s.editProxyProfile,
-                              ),
-                              IconButton(
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () =>
-                                    controller.removeProxyProfile(profile.id),
-                                icon: const Icon(Icons.delete_outline,
-                                    size: 18),
-                                tooltip: s.deleteProxyProfile,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  const SizedBox(height: 4),
-                  OutlinedButton.icon(
-                    onPressed: () => _editProxyProfile(null),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(s.addProxyProfile),
-                  ),
-                  const SizedBox(height: 14),
-                  _SwitchRow(
-                    title: s.proxyEnable,
-                    subtitle: s.proxyEnableHint,
-                    value: controller.proxyEnabled,
-                    onChanged: controller.setProxyEnabled,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.proxyUpdatesEnable,
-                    subtitle: s.proxyUpdatesHint,
-                    value: controller.proxyUpdates,
-                    onChanged: controller.setProxyUpdates,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.proxyRegionEnable,
-                    subtitle: s.proxyRegionHint,
-                    value: controller.proxyRegionBypass,
-                    onChanged: controller.setProxyRegionBypass,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.proxyUdp,
-                    subtitle: s.proxyUdpHint,
-                    value: controller.proxyUdpRelay,
-                    onChanged: controller.setProxyUdpRelay,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.proxyApply,
-                    subtitle: s.proxyApplyHint,
-                    value: controller.proxyApplyToGame,
-                    onChanged: controller.setProxyApplyToGame,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.proxyGuardLabel,
-                    subtitle: s.proxyGuardHint,
-                    value: controller.proxyGuardLaunch,
-                    onChanged: controller.setProxyGuardLaunch,
-                  ),
-                  if (_proxyResult.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _proxyResult,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: _proxyResultColor),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton.icon(
-                      onPressed: _proxyBusy ? null : _probeProxy,
-                      icon: const Icon(Icons.network_check, size: 20),
-                      label: Text(s.proxyTest),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.updatesSection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.currentVersion(appVersion),
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.autoUpdateLabel,
-                    subtitle: s.autoUpdateHint,
-                    value: controller.autoUpdate,
-                    onChanged: controller.setAutoUpdate,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.prefetchLabel,
-                    subtitle: s.prefetchHint,
-                    value: controller.prefetchFavorites,
-                    onChanged: controller.setPrefetchFavorites,
-                  ),
-                  if (controller.updateVersion.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      s.updateAvailable(controller.updateVersion),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
-                  if (controller.updateError.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      s.updateFailed(controller.updateError),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.error,
-                      ),
-                    ),
-                  ],
-                  if (controller.updateApplied) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      s.updateAppliedText,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      if (controller.updateApplied)
-                        FilledButton(
-                          onPressed: () => exit(0),
-                          child: Text(s.restartNow),
-                        )
-                      else if (controller.updateVersion.isNotEmpty)
-                        FilledButton(
-                          onPressed: controller.updateBusy
-                              ? null
-                              : () => controller.applyUpdate(),
-                          child: Text(
-                            controller.updateBusy
-                                ? s.updateDownloading
-                                : s.updateDownload,
-                          ),
-                        )
-                      else
-                        OutlinedButton.icon(
-                          onPressed: controller.updateBusy
-                              ? null
-                              : () => controller.checkForUpdates(),
-                          icon: const Icon(Icons.update, size: 20),
-                          label: Text(
-                            controller.updateBusy
-                                ? s.checkingUpdates
-                                : s.checkUpdates,
-                          ),
-                        ),
+                  TabBar(
+                    controller: _tabs,
+                    indicatorColor: scheme.primary,
+                    labelColor: scheme.primary,
+                    unselectedLabelColor: scheme.onSurfaceVariant,
+                    dividerColor: scheme.outlineVariant,
+                    tabs: [
+                      Tab(text: s.appearance),
+                      Tab(text: s.gameSection),
+                      Tab(text: s.tabNetwork),
+                      Tab(text: s.accountSection),
+                      Tab(text: s.tabSystem),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.safetySection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
+            Expanded(
+              child: IndexedStack(
+                index: _tabs.index,
                 children: [
-                  _SwitchRow(
-                    title: s.patchRpcLabel,
-                    subtitle: s.patchRpcHint,
-                    value: controller.patchRpc,
-                    onChanged: controller.setPatchRpc,
-                  ),
-                  if (!controller.patchRpc) ...[
-                    const SizedBox(height: 8),
-                    _SwitchRow(
-                      title: s.rpcFakeLabel,
-                      subtitle: s.rpcFakeHint,
-                      value: controller.rpcFake,
-                      onChanged: controller.setRpcFake,
-                    ),
-                    if (controller.rpcFake) ...[
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _rpcFakeName,
-                        decoration: illusioInput(s.rpcFakeNameLabel),
-                        onChanged: controller.setRpcFakeName,
-                      ),
-                    ],
-                  ],
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.patchJamLabel,
-                    subtitle: s.patchJamHint,
-                    value: controller.patchJamDials,
-                    onChanged: controller.setPatchJamDials,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.patchBlackholeLabel,
-                    subtitle: s.patchBlackholeHint,
-                    value: controller.patchBlackhole,
-                    onChanged: controller.setPatchBlackhole,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(s.hideLevelLabel, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.hideLevelHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: scheme.outlineVariant),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: controller.hideLevel.clamp(0, 4),
-                        isExpanded: true,
-                        items: [
-                          for (var level = 0; level <= 4; level++)
-                            DropdownMenuItem(
-                              value: level,
-                              child: Text(s.hideLevelName(level)),
-                            ),
-                        ],
-                        onChanged: (value) => controller.setHideLevel(value ?? 2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(s.hwidModeLabel, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.hwidModeHint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: scheme.outlineVariant),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: const ['off', 'random', 'fixed', 'account']
-                                .contains(controller.hwidMode)
-                            ? controller.hwidMode
-                            : 'off',
-                        isExpanded: true,
-                        items: [
-                          for (final mode in ['off', 'random', 'fixed', 'account'])
-                            DropdownMenuItem(
-                              value: mode,
-                              child: Text(s.hwidModeName(mode)),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          controller.setHwidMode(value ?? 'off');
-                          setState(() => _hwid.text = controller.hwidValue);
-                        },
-                      ),
-                    ),
-                  ),
-                  if (controller.hwidMode == 'fixed') ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _hwid,
-                      decoration: illusioInput(
-                        s.hwidValueLabel,
-                        hint: s.hwidValueHint,
-                      ).copyWith(
-                        errorText: controller.hwidValueValid
-                            ? null
-                            : s.hwidInvalid,
-                        suffixIcon: IconButton(
-                          tooltip: s.hwidGenerate,
-                          onPressed: () {
-                            controller.setHwidValue(
-                              widget.controller.generateHwid(),
-                            );
-                            setState(
-                              () => _hwid.text = controller.hwidValue,
-                            );
-                          },
-                          icon: const Icon(Icons.casino_outlined, size: 20),
-                        ),
-                      ),
-                      onChanged: (value) => controller.setHwidValue(value),
-                    ),
-                  ],
-                  if (controller.hwidMode != 'off') ...[
-                    const SizedBox(height: 8),
-                    _SwitchRow(
-                      title: s.hwidOptoutLabel,
-                      subtitle: s.hwidOptoutHint,
-                      value: controller.hwidOptout,
-                      onChanged: controller.setHwidOptout,
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.pgoLabel,
-                    subtitle: s.pgoHint,
-                    value: controller.dynamicPgo,
-                    onChanged: controller.setDynamicPgo,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
-                    title: s.backportsLabel,
-                    subtitle: s.backportsHint,
-                    value: controller.backports,
-                    onChanged: controller.setBackports,
-                  ),
-                  if (controller.backports) ...[
-                    const SizedBox(height: 8),
-                    _SwitchRow(
-                      title: s.backportsNoAnyLabel,
-                      subtitle: s.backportsNoAnyHint,
-                      value: controller.backportsNoAny,
-                      onChanged: controller.setBackportsNoAny,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.accountSection),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    controller.login?.username ?? s.guest,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  Text(
-                    controller.login == null
-                        ? s.accountHintGuest
-                        : s.accountsHintSignedInOf(controller.accounts.length),
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _guest,
-                    decoration: illusioInput(
-                      s.guestName,
-                      hint: s.guestNameHint,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _override,
-                    decoration: illusioInput(
-                      s.overrideName,
-                      hint: s.overrideNameHint,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton.tonalIcon(
-                    onPressed: _saveAccount,
-                    icon: const Icon(Icons.save_outlined, size: 20),
-                    label: Text(s.save),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton.tonalIcon(
-                    onPressed: _openAccount,
-                    icon: const Icon(Icons.person_outline, size: 20),
-                    label: Text(
-                      controller.login == null
-                          ? s.signIn
-                          : s.manageAccounts,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            _SectionLabel(s.diagnostics),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: _card(context),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.configStored, style: theme.textTheme.bodyMedium),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    _pathsLoaded ? _configPath : s.loadingDots,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: controller.openModsDir,
-                        icon: const Icon(Icons.folder_open, size: 20),
-                        label: Text(s.modsDirOpen),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: controller.openLogsDir,
-                        icon: const Icon(Icons.receipt_long_outlined, size: 20),
-                        label: Text(s.logsDirOpen),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _clearCache,
-                        icon: const Icon(Icons.cleaning_services_outlined,
-                            size: 20),
-                        label: Text(s.clearCache),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Illusio $appVersion · ${s.coreLabel} ${Core.version()}',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
+                  _lookTab(controller, s, pad),
+                  _gameTab(controller, s, pad),
+                  _networkTab(controller, s, pad),
+                  _accountTab(controller, s, pad),
+                  _systemTab(controller, s, pad),
                 ],
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _lookTab(AppController controller, S s, double pad) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, pad),
+      children: [
+        _SectionLabel(s.appearance),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.theme, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.themeHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final preset in _themeChips(controller))
+                    ChoiceChip(
+                      label: Text(preset.$1),
+                      selected: controller.theme == preset.$2,
+                      onSelected: (_) => controller.setTheme(preset.$2),
+                      avatar: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: preset.$3,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: scheme.outlineVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (controller.theme == 'custom') ...[
+                const SizedBox(height: 18),
+                Text(s.customColorLabel,
+                    style: theme.textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  s.customColorHint,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final swatch in _customSwatches)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () =>
+                            controller.setCustomColor(swatch & 0xFFFFFF),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Color(0xFF000000 | swatch),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: controller.customColor ==
+                                      (swatch & 0xFFFFFF)
+                                  ? scheme.primary
+                                  : scheme.outlineVariant,
+                              width: controller.customColor ==
+                                      (swatch & 0xFFFFFF)
+                                  ? 2.5
+                                  : 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _hex,
+                  decoration: illusioInput(s.customColorLabel,
+                      hint: '#7C5CFF'),
+                  onSubmitted: _applyHex,
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.dockLabel, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.dockHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment(
+                    value: 'bottom',
+                    icon: const Icon(Icons.dock, size: 18),
+                    label: Text(s.dockBottom),
+                  ),
+                  ButtonSegment(
+                    value: 'left',
+                    icon: const Icon(Icons.vertical_split, size: 18),
+                    label: Text(s.dockLeft),
+                  ),
+                  ButtonSegment(
+                    value: 'right',
+                    icon: const Icon(Icons.vertical_split_outlined,
+                        size: 18),
+                    label: Text(s.dockRight),
+                  ),
+                ],
+                selected: {
+                  ['bottom', 'left', 'right'].contains(controller.dockSide)
+                      ? controller.dockSide
+                      : 'bottom'
+                },
+                onSelectionChanged: (selection) =>
+                    controller.setDockSide(selection.first),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.cornersLabel, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.cornersHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final variant in [
+                    (s.cornersCompact, 'compact'),
+                    (s.cornersNormal, 'normal'),
+                    (s.cornersRound, 'round'),
+                  ])
+                    ChoiceChip(
+                      label: Text(variant.$1),
+                      selected: controller.corners == variant.$2,
+                      onSelected: (_) => controller.setCorners(variant.$2),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.fontLabel, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.fontHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final variant in [
+                    (s.fontDefault, 'default'),
+                    (s.fontSystem, 'system'),
+                    ('Inter', 'inter'),
+                    ('Manrope', 'manrope'),
+                    ('Nunito', 'nunito'),
+                    ('JetBrains Mono', 'jetbrains'),
+                  ])
+                    ChoiceChip(
+                      label: Text(variant.$1),
+                      selected: controller.font == variant.$2,
+                      onSelected: (_) => controller.setFont(variant.$2),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.language, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.languageHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'ru',
+                    icon: Icon(Icons.language, size: 18),
+                    label: Text('RU'),
+                  ),
+                  ButtonSegment(
+                    value: 'en',
+                    icon: Icon(Icons.language, size: 18),
+                    label: Text('EN'),
+                  ),
+                ],
+                selected: {
+                  controller.language == 'en' ? 'en' : 'ru'
+                },
+                onSelectionChanged: (selection) =>
+                    controller.setLanguage(selection.first),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _gameTab(AppController controller, S s, double pad) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, pad),
+      children: [
+        _SectionLabel(s.gameSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            children: [
+              _SwitchRow(
+                title: s.fullscreen,
+                subtitle: 'display.windowmode',
+                value: controller.fullscreen,
+                onChanged: controller.setFullscreen,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: 'vsync',
+                subtitle: 'display.vsync',
+                value: controller.vsync,
+                onChanged: controller.setVsync,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _SectionLabel(s.clientSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _installDir,
+                decoration: illusioInput(
+                  s.installDir,
+                  hint: s.installDirHint,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _launchArgs,
+                decoration: illusioInput(
+                  s.launchArgs,
+                  hint: '--profile server',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(s.enginesSection, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.enginesHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => controller.setEngineOverride(''),
+                child: Row(
+                  children: [
+                    Icon(
+                      controller.engineOverride.isEmpty
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_off,
+                      size: 20,
+                      color: controller.engineOverride.isEmpty
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        s.enginesStandard,
+                        style: theme.textTheme.bodyMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (final engine in controller.customEngines)
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => controller
+                      .setEngineOverride(controller.engineZipPath(engine)),
+                  child: Row(
+                    children: [
+                      Icon(
+                        controller.engineOverride ==
+                                controller.engineZipPath(engine)
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 20,
+                        color: controller.engineOverride ==
+                                controller.engineZipPath(engine)
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          engine.version.isEmpty
+                              ? engine.name
+                              : '${engine.name} · ${s.engineVersioned(engine.version)}',
+                          style: theme.textTheme.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: s.enginesDelete,
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: controller.enginesBusy
+                            ? null
+                            : () => controller.removeEngine(engine.id),
+                      ),
+                    ],
+                  ),
+                ),
+              if (controller.customEngines.isEmpty)
+                Text(
+                  s.enginesEmpty,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              if (controller.enginesError.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  s.enginesFailed(controller.enginesError),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.error),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: controller.enginesBusy
+                        ? null
+                        : _importEngineZip,
+                    icon: const Icon(Icons.archive_outlined, size: 18),
+                    label: Text(
+                      controller.enginesBusy
+                          ? s.enginesImporting
+                          : s.enginesImportZip,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: controller.enginesBusy
+                        ? null
+                        : _importEngineFolder,
+                    icon: const Icon(Icons.folder_open_outlined, size: 18),
+                    label: Text(s.enginesImportFolder),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _SwitchRow(
+                title: s.clientLogs,
+                subtitle: s.clientLogsHint,
+                value: controller.clientLogs,
+                onChanged: controller.setClientLogs,
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonal(
+                  onPressed: _saveClient,
+                  child: Text(s.save),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _networkTab(AppController controller, S s, double pad) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, pad),
+      children: [
+        _SectionLabel(s.serverListSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SwitchRow(
+                title: s.hideEmptyServers,
+                subtitle: s.hideEmptyHint,
+                value: controller.hideEmpty,
+                onChanged: controller.setHideEmpty,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.hideFullServers,
+                subtitle: s.hideFullHint,
+                value: controller.hideFull,
+                onChanged: controller.setHideFull,
+              ),
+              const SizedBox(height: 14),
+              Text(s.hubs, style: theme.textTheme.titleMedium),
+              Text(
+                s.hubsHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              for (final hub in controller.hubs)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          hub,
+                          style: theme.textTheme.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => controller.setHubs(
+                          controller.hubs
+                              .where((value) => value != hub)
+                              .toList(),
+                        ),
+                        icon: const Icon(Icons.close, size: 18),
+                        tooltip: s.removeHub,
+                      ),
+                    ],
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: _addHub,
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(s.addHub),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _SectionLabel(s.proxySection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.proxyProfiles, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.proxyProfilesHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              if (controller.proxyProfiles.isEmpty)
+                Text(
+                  s.proxyNoProfiles,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                for (final profile in controller.proxyProfiles)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: ListTile(
+                      onTap: () =>
+                          controller.selectProxyProfile(profile.id),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      tileColor: scheme.surfaceContainerLow,
+                      leading: Icon(
+                        controller.selectedProxyProfile?.id == profile.id
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 20,
+                        color: controller.selectedProxyProfile?.id ==
+                                profile.id
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
+                      ),
+                      title: Text(
+                        profile.name,
+                        style: theme.textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${profile.host}:${profile.port}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _editProxyProfile(profile),
+                            icon: const Icon(Icons.edit_outlined,
+                                size: 18),
+                            tooltip: s.editProxyProfile,
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () =>
+                                controller.removeProxyProfile(profile.id),
+                            icon: const Icon(Icons.delete_outline,
+                                size: 18),
+                            tooltip: s.deleteProxyProfile,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              const SizedBox(height: 4),
+              OutlinedButton.icon(
+                onPressed: () => _editProxyProfile(null),
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(s.addProxyProfile),
+              ),
+              const SizedBox(height: 14),
+              _SwitchRow(
+                title: s.proxyEnable,
+                subtitle: s.proxyEnableHint,
+                value: controller.proxyEnabled,
+                onChanged: controller.setProxyEnabled,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.proxyUpdatesEnable,
+                subtitle: s.proxyUpdatesHint,
+                value: controller.proxyUpdates,
+                onChanged: controller.setProxyUpdates,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.proxyRegionEnable,
+                subtitle: s.proxyRegionHint,
+                value: controller.proxyRegionBypass,
+                onChanged: controller.setProxyRegionBypass,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.proxyUdp,
+                subtitle: s.proxyUdpHint,
+                value: controller.proxyUdpRelay,
+                onChanged: controller.setProxyUdpRelay,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.proxyApply,
+                subtitle: s.proxyApplyHint,
+                value: controller.proxyApplyToGame,
+                onChanged: controller.setProxyApplyToGame,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.proxyGuardLabel,
+                subtitle: s.proxyGuardHint,
+                value: controller.proxyGuardLaunch,
+                onChanged: controller.setProxyGuardLaunch,
+              ),
+              if (_proxyResult.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _proxyResult,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: _proxyResultColor),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: _proxyBusy ? null : _probeProxy,
+                  icon: const Icon(Icons.network_check, size: 20),
+                  label: Text(s.proxyTest),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _accountTab(AppController controller, S s, double pad) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, pad),
+      children: [
+        _SectionLabel(s.accountSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                controller.login?.username ?? s.guest,
+                style: theme.textTheme.titleMedium,
+              ),
+              Text(
+                controller.login == null
+                    ? s.accountHintGuest
+                    : s.accountsHintSignedInOf(controller.accounts.length),
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _guest,
+                decoration: illusioInput(
+                  s.guestName,
+                  hint: s.guestNameHint,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _override,
+                decoration: illusioInput(
+                  s.overrideName,
+                  hint: s.overrideNameHint,
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.tonalIcon(
+                onPressed: _saveAccount,
+                icon: const Icon(Icons.save_outlined, size: 20),
+                label: Text(s.save),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.tonalIcon(
+                onPressed: _openAccount,
+                icon: const Icon(Icons.person_outline, size: 20),
+                label: Text(
+                  controller.login == null
+                      ? s.signIn
+                      : s.manageAccounts,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _systemTab(AppController controller, S s, double pad) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ListView(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, pad),
+      children: [
+        _SectionLabel(s.updatesSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.currentVersion(appVersion),
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.autoUpdateLabel,
+                subtitle: s.autoUpdateHint,
+                value: controller.autoUpdate,
+                onChanged: controller.setAutoUpdate,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.prefetchLabel,
+                subtitle: s.prefetchHint,
+                value: controller.prefetchFavorites,
+                onChanged: controller.setPrefetchFavorites,
+              ),
+              if (controller.updateVersion.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  s.updateAvailable(controller.updateVersion),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+              ],
+              if (controller.updateError.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  s.updateFailed(controller.updateError),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
+              ],
+              if (controller.updateApplied) ...[
+                const SizedBox(height: 12),
+                Text(
+                  s.updateAppliedText,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (controller.updateApplied)
+                    FilledButton(
+                      onPressed: () => exit(0),
+                      child: Text(s.restartNow),
+                    )
+                  else if (controller.updateVersion.isNotEmpty)
+                    FilledButton(
+                      onPressed: controller.updateBusy
+                          ? null
+                          : () => controller.applyUpdate(),
+                      child: Text(
+                        controller.updateBusy
+                            ? s.updateDownloading
+                            : s.updateDownload,
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: controller.updateBusy
+                          ? null
+                          : () => controller.checkForUpdates(),
+                      icon: const Icon(Icons.update, size: 20),
+                      label: Text(
+                        controller.updateBusy
+                            ? s.checkingUpdates
+                            : s.checkUpdates,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _SectionLabel(s.safetySection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            children: [
+              _SwitchRow(
+                title: s.patchRpcLabel,
+                subtitle: s.patchRpcHint,
+                value: controller.patchRpc,
+                onChanged: controller.setPatchRpc,
+              ),
+              if (!controller.patchRpc) ...[
+                const SizedBox(height: 8),
+                _SwitchRow(
+                  title: s.rpcFakeLabel,
+                  subtitle: s.rpcFakeHint,
+                  value: controller.rpcFake,
+                  onChanged: controller.setRpcFake,
+                ),
+                if (controller.rpcFake) ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _rpcFakeName,
+                    decoration: illusioInput(s.rpcFakeNameLabel),
+                    onChanged: controller.setRpcFakeName,
+                  ),
+                ],
+              ],
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.patchJamLabel,
+                subtitle: s.patchJamHint,
+                value: controller.patchJamDials,
+                onChanged: controller.setPatchJamDials,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.patchBlackholeLabel,
+                subtitle: s.patchBlackholeHint,
+                value: controller.patchBlackhole,
+                onChanged: controller.setPatchBlackhole,
+              ),
+              const SizedBox(height: 14),
+              Text(s.hideLevelLabel, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.hideLevelHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: controller.hideLevel.clamp(0, 4),
+                    isExpanded: true,
+                    items: [
+                      for (var level = 0; level <= 4; level++)
+                        DropdownMenuItem(
+                          value: level,
+                          child: Text(s.hideLevelName(level)),
+                        ),
+                    ],
+                    onChanged: (value) => controller.setHideLevel(value ?? 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(s.hwidModeLabel, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                s.hwidModeHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: const ['off', 'random', 'fixed', 'account']
+                            .contains(controller.hwidMode)
+                        ? controller.hwidMode
+                        : 'off',
+                    isExpanded: true,
+                    items: [
+                      for (final mode in ['off', 'random', 'fixed', 'account'])
+                        DropdownMenuItem(
+                          value: mode,
+                          child: Text(s.hwidModeName(mode)),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      controller.setHwidMode(value ?? 'off');
+                      setState(() => _hwid.text = controller.hwidValue);
+                    },
+                  ),
+                ),
+              ),
+              if (controller.hwidMode == 'fixed') ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _hwid,
+                  decoration: illusioInput(
+                    s.hwidValueLabel,
+                    hint: s.hwidValueHint,
+                  ).copyWith(
+                    errorText: controller.hwidValueValid
+                        ? null
+                        : s.hwidInvalid,
+                    suffixIcon: IconButton(
+                      tooltip: s.hwidGenerate,
+                      onPressed: () {
+                        controller.setHwidValue(
+                          widget.controller.generateHwid(),
+                        );
+                        setState(
+                          () => _hwid.text = controller.hwidValue,
+                        );
+                      },
+                      icon: const Icon(Icons.casino_outlined, size: 20),
+                    ),
+                  ),
+                  onChanged: (value) => controller.setHwidValue(value),
+                ),
+              ],
+              if (controller.hwidMode != 'off') ...[
+                const SizedBox(height: 8),
+                _SwitchRow(
+                  title: s.hwidOptoutLabel,
+                  subtitle: s.hwidOptoutHint,
+                  value: controller.hwidOptout,
+                  onChanged: controller.setHwidOptout,
+                ),
+              ],
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.pgoLabel,
+                subtitle: s.pgoHint,
+                value: controller.dynamicPgo,
+                onChanged: controller.setDynamicPgo,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.backportsLabel,
+                subtitle: s.backportsHint,
+                value: controller.backports,
+                onChanged: controller.setBackports,
+              ),
+              if (controller.backports) ...[
+                const SizedBox(height: 8),
+                _SwitchRow(
+                  title: s.backportsNoAnyLabel,
+                  subtitle: s.backportsNoAnyHint,
+                  value: controller.backportsNoAny,
+                  onChanged: controller.setBackportsNoAny,
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _SectionLabel(s.diagnostics),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.configStored, style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 6),
+              SelectableText(
+                _pathsLoaded ? _configPath : s.loadingDots,
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: controller.openModsDir,
+                    icon: const Icon(Icons.folder_open, size: 20),
+                    label: Text(s.modsDirOpen),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: controller.openLogsDir,
+                    icon: const Icon(Icons.receipt_long_outlined, size: 20),
+                    label: Text(s.logsDirOpen),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _clearCache,
+                    icon: const Icon(Icons.cleaning_services_outlined,
+                        size: 20),
+                    label: Text(s.clearCache),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Illusio $appVersion · ${s.coreLabel} ${Core.version()}',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

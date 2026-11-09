@@ -167,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final s = S.of(context);
         final favorites = widget.controller.sortedFavorites;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
+          padding: EdgeInsets.fromLTRB(20, 4, 20, widget.controller.listBottomPad),
           children: [
             Center(
               child: ConstrainedBox(
@@ -185,16 +185,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       onConnect: _connectDirect,
                     ),
                     const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _pickBundle,
-                            icon: const Icon(Icons.movie_outlined, size: 20),
-                            label: Text(s.launchReplay),
-                          ),
-                        ),
-                      ],
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _pickBundle,
+                        icon: const Icon(Icons.movie_outlined, size: 20),
+                        label: Text(s.launchReplay),
+                      ),
                     ),
                     const SizedBox(height: 28),
                     Row(
