@@ -259,6 +259,8 @@ pub struct DownloadState {
     pub content_zip: String,
     #[serde(rename = "engineSig")]
     pub engine_sig: String,
+    #[serde(rename = "modules", skip_serializing_if = "Vec::is_empty", default)]
+    pub modules: Vec<String>,
     #[serde(
         rename = "bundleZip",
         skip_serializing_if = "String::is_empty",
@@ -460,6 +462,8 @@ fn execute(
                     state.engine_zip = payload.engine_zip.display().to_string();
                     state.content_zip = payload.content_zip.display().to_string();
                     state.engine_sig = payload.engine_sig.clone();
+                    state.modules =
+                        crate::modules::read_names(&payload.engine_zip).unwrap_or_default();
                 });
                 return Ok((target, info, payload.message));
             }
@@ -715,6 +719,7 @@ fn execute_bundle(spec: &DownloadSpec) -> Result<(PathBuf, ServerInfo, String, S
         state.engine_zip = engine_zip.display().to_string();
         state.content_zip = content_zip.display().to_string();
         state.engine_sig = engine_sig;
+        state.modules = crate::modules::read_names(&engine_zip).unwrap_or_default();
         state.message = "реплей готов к запуску".into();
     });
     Ok((target, info, "content bundle готов".into(), bundle_path))

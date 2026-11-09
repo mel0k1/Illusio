@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'ffi/bindings.dart';
@@ -7,6 +10,10 @@ import 'ui/app_shell.dart';
 import 'ui/theme.dart';
 
 void main(List<String> arguments) {
+  final ipc = Core.ipcInit(jsonEncode(arguments));
+  if (ipc['primary'] == false) {
+    exit(0);
+  }
   runApp(IllusioApp(initialServer: _initialServer(arguments)));
 }
 

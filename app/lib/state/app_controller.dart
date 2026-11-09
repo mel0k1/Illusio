@@ -17,6 +17,13 @@ import '../models/server_info.dart';
 import '../models/server_status.dart';
 import '../version.dart';
 
+class CrashInfo {
+  const CrashInfo({required this.exitCode, required this.logTail});
+
+  final int exitCode;
+  final String logTail;
+}
+
 class AppController extends ChangeNotifier {
   AppController() : favorites = [], accounts = [] {
     ready = _loadConfig();
@@ -79,6 +86,18 @@ class AppController extends ChangeNotifier {
   bool rpcFake = false;
   String rpcFakeName = 'Illusio';
   bool proxyGuardLaunch = true;
+  bool patchless = false;
+  bool stealthRegistries = false;
+  bool adminGuid = false;
+  String adminGuidValue = '';
+  bool modLogs = false;
+  List<String> filterHubs = [];
+  bool updatePrerelease = false;
+  bool cardMap = true;
+  bool cardPreset = true;
+  bool cardRound = true;
+
+  CrashInfo? crashDiag;
 
   String updateVersion = '';
   String updateNotes = '';
@@ -87,6 +106,8 @@ class AppController extends ChangeNotifier {
   String updateError = '';
   Timer? _refreshTimer;
   Timer? _prefetchTimer;
+  Timer? _ipcTimer;
+  Timer? _crashTimer;
   bool _prefetchRunning = false;
 
   bool get ru => language != 'en';
@@ -254,6 +275,18 @@ class AppController extends ChangeNotifier {
       rpcFake = config['rpc_fake'] == true;
       rpcFakeName = config['rpc_fake_name']?.toString() ?? 'Illusio';
       proxyGuardLaunch = config['proxy_guard_launch'] != false;
+      patchless = config['patchless'] == true;
+      stealthRegistries = config['stealth_registries'] == true;
+      adminGuid = config['admin_guid'] == true;
+      adminGuidValue = config['admin_guid_value']?.toString() ?? '';
+      modLogs = config['mod_logs'] == true;
+      filterHubs = ((config['filter_hubs'] as List?) ?? const [])
+          .map((value) => value.toString())
+          .toList();
+      updatePrerelease = config['update_prerelease'] == true;
+      cardMap = config['card_map'] != false;
+      cardPreset = config['card_preset'] != false;
+      cardRound = config['card_round'] != false;
       dllModsEnabled
         ..clear()
         ..addAll(
@@ -297,6 +330,7 @@ class AppController extends ChangeNotifier {
   void _startTimers() {
     _refreshTimer?.cancel();
     _prefetchTimer?.cancel();
+    _ipcTimer?.cancel();
     _refreshTimer = Timer.periodic(
       const Duration(hours: 12),
       (_) => _refreshSession(),
@@ -305,6 +339,57 @@ class AppController extends ChangeNotifier {
       const Duration(minutes: 10),
       (_) => prefetchLoop(),
     );
+    _ipcTimer = Timer.periodic(
+      const Duration(milliseconds: 600),
+      (_) => _pollIpc(),
+    );
+  }
+
+  void _pollIpc() {
+    if (connecting) {
+      return;
+    }
+    final result = Core.ipcPoll();
+    final url = result['url']?.toString() ?? '';
+    if (url.isEmpty) {
+      return;
+    }
+    pendingConnect = url;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    _prefetchTimer?.cancel();
+    _ipcTimer?.cancel();
+    _crashTimer?.cancel();
+    super.dispose();
+  }
+
+  void dismissCrash() {
+    crashDiag = null;
+    notifyListeners();
+  }
+
+  void _watchLaunch() {
+    _crashTimer?.cancel();
+    var checks = 0;
+    _crashTimer = Timer.periodic(const Duration(milliseconds: 400), (timer) {
+      checks++;
+      final result = Core.launchStatus();
+      final status = (result['status'] as Map?) ?? const {};
+      if (status['crashed'] == true) {
+        timer.cancel();
+        crashDiag = CrashInfo(
+          exitCode: (status['exitCode'] as num?)?.toInt() ?? -1,
+          logTail: status['logTail']?.toString() ?? '',
+        );
+        notifyListeners();
+      } else if (status['exited'] == true || checks >= 12) {
+        timer.cancel();
+      }
+    });
   }
 
   DateTime? _expiry(String raw) {
@@ -577,6 +662,16 @@ class AppController extends ChangeNotifier {
       'rpc_fake': rpcFake,
       'rpc_fake_name': rpcFakeName,
       'proxy_guard_launch': proxyGuardLaunch,
+      'patchless': patchless,
+      'stealth_registries': stealthRegistries,
+      'admin_guid': adminGuid,
+      'admin_guid_value': adminGuidValue,
+      'mod_logs': modLogs,
+      'filter_hubs': filterHubs,
+      'update_prerelease': updatePrerelease,
+      'card_map': cardMap,
+      'card_preset': cardPreset,
+      'card_round': cardRound,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
@@ -899,7 +994,13 @@ class AppController extends ChangeNotifier {
           .map(HubServer.fromMap)
           .where((server) => !server.empty)
           .toList();
-      hubServers.sort((left, right) => right.players.compareTo(left.players));
+      hubServers.sort((left, right) {
+        final byPlayers = right.players.compareTo(left.players);
+        if (byPlayers != 0) {
+          return byPlayers;
+        }
+        return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+      });
       notifyListeners();
       _pingVisible();
     } else {
@@ -1153,7 +1254,7 @@ class AppController extends ChangeNotifier {
     if (updateBusy) {
       return;
     }
-    final payload = jsonEncode({'current': appVersion});
+    final payload = jsonEncode({'current': appVersion, 'prerelease': updatePrerelease});
     final result = await Isolate.run(() => Core.updateCheck(payload));
     if (result['ok'] != true) {
       if (!auto) {
@@ -1184,7 +1285,7 @@ class AppController extends ChangeNotifier {
     updateBusy = true;
     updateError = '';
     notifyListeners();
-    final payload = jsonEncode({'current': appVersion});
+    final payload = jsonEncode({'current': appVersion, 'prerelease': updatePrerelease});
     final result = await Isolate.run(() => Core.selfUpdate(payload));
     updateBusy = false;
     if (result['ok'] == true && result['updated'] == true) {
@@ -1503,6 +1604,7 @@ class AppController extends ChangeNotifier {
     required bool acz,
     required List<String> overlays,
     required String connectAddress,
+    required List<String> modules,
   }) {
     final auth = _authFields(info);
     final logDir = clientLogs && logsPath.isNotEmpty ? logsPath : '';
@@ -1554,6 +1656,12 @@ class AppController extends ChangeNotifier {
       'backports_no_any': backportsNoAny,
       'rpc_fake': rpcFake,
       'rpc_fake_name': rpcFakeName,
+      'patchless': patchless,
+      'stealth_registries': stealthRegistries,
+      'admin_guid': adminGuid,
+      'admin_guid_value': adminGuidValue,
+      'mod_logs': modLogs,
+      'modules': modules,
     };
   }
 
@@ -1676,6 +1784,18 @@ class AppController extends ChangeNotifier {
       if (bundle.isNotEmpty) bundle,
       ...enabledModPaths(),
     ];
+    var modules = downloadState.modules;
+    final overrideZip = engineOverride.trim();
+    if (acz && overrideZip.isNotEmpty && File(overrideZip).existsSync()) {
+      final result = await Isolate.run(
+        () => Core.engineModules(jsonEncode({'path': overrideZip})),
+      );
+      if (result['ok'] == true) {
+        modules = ((result['modules'] as List?) ?? const [])
+            .map((value) => value.toString())
+            .toList();
+      }
+    }
     final spec = _launchSpec(
       installDir: downloadState.installDir,
       serverUrl: server?.url ?? '',
@@ -1683,12 +1803,14 @@ class AppController extends ChangeNotifier {
       acz: acz,
       overlays: overlays,
       connectAddress: info?.connectAddress ?? '',
+      modules: modules,
     );
     final result = await Isolate.run(() => Core.launch(jsonEncode(spec)));
     if (result['ok'] != true) {
       return result;
     }
     selectedServer = server;
+    _watchLaunch();
     await saveConfig();
     return result;
   }
@@ -1720,8 +1842,12 @@ class AppController extends ChangeNotifier {
       acz: false,
       overlays: const [],
       connectAddress: '',
+      modules: const [],
     );
-    await Isolate.run(() => Core.launch(jsonEncode(spec)));
+    final result = await Isolate.run(() => Core.launch(jsonEncode(spec)));
+    if (result['ok'] == true) {
+      _watchLaunch();
+    }
   }
 
   void setBackports(bool value) {
@@ -1747,5 +1873,133 @@ class AppController extends ChangeNotifier {
   void setProxyGuardLaunch(bool value) {
     proxyGuardLaunch = value;
     notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchless(bool value) {
+    patchless = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setStealthRegistries(bool value) {
+    stealthRegistries = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setAdminGuid(bool value) {
+    adminGuid = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setAdminGuidValue(String value) {
+    adminGuidValue = value.trim();
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setModLogs(bool value) {
+    modLogs = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setFilterHubs(List<String> value) {
+    filterHubs = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setUpdatePrerelease(bool value) {
+    updatePrerelease = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setCardMap(bool value) {
+    cardMap = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setCardPreset(bool value) {
+    cardPreset = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setCardRound(bool value) {
+    cardRound = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  Map<String, dynamic> themeProfile() {
+    return {
+      'version': 1,
+      'app': 'illusio',
+      'theme': theme,
+      'custom_color': customColor,
+      'corners': corners,
+      'font': font,
+      'dock_side': dockSide,
+    };
+  }
+
+  Future<void> exportTheme(String path) async {
+    final raw = const JsonEncoder.withIndent('  ').convert(themeProfile());
+    await File(path).writeAsString('$raw\n');
+  }
+
+  Future<bool> importTheme(String path) async {
+    final raw = await File(path).readAsString();
+    final Object? data;
+    try {
+      data = jsonDecode(raw);
+    } catch (_) {
+      return false;
+    }
+    if (data is! Map) {
+      return false;
+    }
+    const presets = [
+      'dark',
+      'darkRed',
+      'darkPurple',
+      'midnightBlue',
+      'emeraldDusk',
+      'copperNight',
+      'light',
+      'custom',
+    ];
+    const cornerValues = ['compact', 'normal', 'round'];
+    const fontValues = ['default', 'system', 'inter', 'manrope', 'nunito', 'jetbrains'];
+    const dockValues = ['bottom', 'left', 'right'];
+    final preset = data['theme']?.toString() ?? '';
+    if (!presets.contains(preset)) {
+      return false;
+    }
+    theme = preset;
+    final color = (data['custom_color'] as num?)?.toInt();
+    if (color != null) {
+      customColor = color & 0xFFFFFF;
+    }
+    final cornerValue = data['corners']?.toString() ?? '';
+    if (cornerValues.contains(cornerValue)) {
+      corners = cornerValue;
+    }
+    final fontValue = data['font']?.toString() ?? '';
+    if (fontValues.contains(fontValue)) {
+      font = fontValue;
+    }
+    final dockValue = data['dock_side']?.toString() ?? '';
+    if (dockValues.contains(dockValue)) {
+      dockSide = dockValue;
+    }
+    notifyListeners();
+    await saveConfig();
+    return true;
   }
 }

@@ -1,5 +1,8 @@
 use crate::config::ProxyConfig;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use sha2::Digest;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 static PROXY_SESSION_OFF: AtomicBool = AtomicBool::new(false);
 
@@ -8,6 +11,48 @@ pub enum Route {
     Launcher,
     Updates,
     Region,
+}
+
+pub fn user_agent() -> String {
+    format!("SS14.Launcher/{}", env!("CARGO_PKG_VERSION"))
+}
+
+pub fn fingerprint() -> String {
+    static FINGERPRINT: OnceLock<String> = OnceLock::new();
+    FINGERPRINT
+        .get_or_init(|| {
+            let dir = match crate::config::config_dir() {
+                Some(value) => value,
+                None => return String::new(),
+            };
+            let file = dir.join("fingerprint");
+            if let Ok(existing) = std::fs::read_to_string(&file) {
+                let trimmed = existing.trim().to_string();
+                if trimmed.len() == 32 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return trimmed;
+                }
+            }
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|value| value.as_nanos())
+                    .unwrap_or(0)
+                    .to_le_bytes(),
+            );
+            hasher.update(std::process::id().to_le_bytes());
+            let digest = hasher.finalize();
+            let hex: String = digest
+                .iter()
+                .take(16)
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            if std::fs::create_dir_all(&dir).is_ok() {
+                let _ = std::fs::write(&file, &hex);
+            }
+            hex
+        })
+        .clone()
 }
 
 pub fn set_session_proxy(enabled: bool) {
@@ -22,6 +67,11 @@ pub fn with_route(
     builder: reqwest::blocking::ClientBuilder,
     route: Route,
 ) -> reqwest::blocking::ClientBuilder {
+    let builder = builder.user_agent(user_agent());
+    let builder = match fingerprint_headers() {
+        Some(headers) => builder.default_headers(headers),
+        None => builder,
+    };
     if !session_proxy_enabled() {
         return builder;
     }
@@ -32,6 +82,18 @@ pub fn with_route(
         return builder;
     }
     apply_proxy(builder, proxy)
+}
+
+fn fingerprint_headers() -> Option<HeaderMap> {
+    let value = fingerprint();
+    if value.is_empty() {
+        return None;
+    }
+    let name = HeaderName::from_bytes(b"x-illusio-fingerprint").ok()?;
+    let parsed = HeaderValue::from_str(&value).ok()?;
+    let mut headers = HeaderMap::new();
+    headers.insert(name, parsed);
+    Some(headers)
 }
 
 pub fn route_enabled(proxy: &ProxyConfig, route: Route) -> bool {

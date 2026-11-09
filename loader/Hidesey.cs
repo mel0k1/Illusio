@@ -28,6 +28,11 @@ internal static class Envsey
         return _snapshot.TryGetValue(name, out var value) ? value : null;
     }
 
+    public static IReadOnlyDictionary<string, string?> All()
+    {
+        return _snapshot;
+    }
+
     public static void Scrub()
     {
         foreach (var key in Environment
@@ -46,6 +51,7 @@ internal static class Envsey
         return key.StartsWith("ILLUSIO_", StringComparison.Ordinal)
             || key.StartsWith("SS14_LOADER_", StringComparison.Ordinal)
             || key.StartsWith("MARSEY_", StringComparison.Ordinal)
+            || key.StartsWith("ROBUST_MODULE_", StringComparison.Ordinal)
             || key.Equals("SS14_DISABLE_SIGNING", StringComparison.Ordinal);
     }
 }

@@ -4,6 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_HUB_URL: &str = "https://hub.spacestation14.com/";
+pub const FALLBACK_HUB_URL: &str = "https://hub.fallback.spacestation14.com/";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HubServer {
@@ -27,6 +28,8 @@ pub struct HubServer {
     pub round_id: i64,
     #[serde(default)]
     pub status_message: String,
+    #[serde(default, rename = "roundStartTime", alias = "round_start_time")]
+    pub round_start_time: String,
     #[serde(default)]
     pub hub: String,
 }
@@ -69,6 +72,8 @@ struct HubStatusData {
     round_id: i64,
     #[serde(default, rename = "statusMessage")]
     status_message: String,
+    #[serde(default, rename = "round_start_time", alias = "roundStartTime")]
+    round_start_time: String,
 }
 
 pub fn normalize_server_address(server_url: &str) -> String {
@@ -96,6 +101,7 @@ impl From<HubEntry> for HubServer {
             run_level: status.run_level,
             round_id: status.round_id,
             status_message: status.status_message,
+            round_start_time: status.round_start_time,
             hub: String::new(),
         }
     }
@@ -116,6 +122,14 @@ pub fn hub_url(value: &str) -> String {
 }
 
 fn fetch_hub_servers(hub: &str) -> Result<Vec<HubServer>, String> {
+    let url = hub_url(hub);
+    match fetch_hub_at(&url) {
+        Err(error) if url == DEFAULT_HUB_URL => fetch_hub_at(FALLBACK_HUB_URL).map_err(|_| error),
+        other => other,
+    }
+}
+
+fn fetch_hub_at(hub: &str) -> Result<Vec<HubServer>, String> {
     let client = crate::http::with_route(
         reqwest::blocking::Client::builder(),
         crate::http::Route::Launcher,
@@ -196,6 +210,12 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
         }
         return Err(errors.join("; "));
     }
+    merged.sort_by(|left, right| {
+        right
+            .players
+            .cmp(&left.players)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
     Ok(merged)
 }
 
@@ -275,7 +295,7 @@ mod tests {
     #[test]
     fn parses_hub_payload() {
         let raw = r#"[
-            {"address":"ss14://wormix14.site","statusData":{"name":"Wormix","players":32,"soft_max_players":40,"tags":["lang:ru"],"preset":"Гриншифт","map":"Box","run_level":1,"round_id":1437,"statusMessage":"привет"}},
+            {"address":"ss14://wormix14.site","statusData":{"name":"Wormix","players":32,"soft_max_players":40,"tags":["lang:ru"],"preset":"Гриншифт","map":"Box","run_level":1,"round_id":1437,"statusMessage":"привет","round_start_time":"2026-01-01T10:00:00Z"}},
             {"address":"ss14s://erida.example.net","statusData":{"name":"Эрида","players":25}}
         ]"#;
         let servers: Vec<HubServer> = serde_json::from_str::<Vec<HubEntry>>(raw)
@@ -287,7 +307,9 @@ mod tests {
         assert_eq!(servers[0].players, 32);
         assert_eq!(servers[0].soft_max_players, 40);
         assert_eq!(servers[0].status_message, "привет");
+        assert_eq!(servers[0].round_start_time, "2026-01-01T10:00:00Z");
         assert_eq!(servers[1].soft_max_players, 0);
+        assert_eq!(servers[1].round_start_time, "");
     }
 
     #[test]

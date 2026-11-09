@@ -439,6 +439,10 @@ pub fn prepare_udp_relay(
 }
 
 impl PreparedRelay {
+    pub fn stop(self) {
+        self.shared.stop.store(true, Ordering::SeqCst);
+    }
+
     pub fn start(self, mut child: Child) {
         let shared = Arc::clone(&self.shared);
         let target_endpoint = self.shared.target_endpoint;

@@ -39,6 +39,8 @@ pub fn version_is_below(current: &str, minimum: &str) -> bool {
 }
 
 pub const RELEASES_API: &str = "https://api.github.com/repos/mel0k1/Illusio/releases/latest";
+pub const RELEASES_LIST_API: &str =
+    "https://api.github.com/repos/mel0k1/Illusio/releases?per_page=10";
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ReleaseCheck {
@@ -91,17 +93,36 @@ fn update_client() -> Result<reqwest::blocking::Client, String> {
 }
 
 pub fn check(current_version: &str) -> Result<ReleaseCheck, String> {
+    check_ex(current_version, false)
+}
+
+pub fn check_ex(current_version: &str, prerelease: bool) -> Result<ReleaseCheck, String> {
     let client = update_client()?;
+    let endpoint = if prerelease {
+        RELEASES_LIST_API
+    } else {
+        RELEASES_API
+    };
     let response = client
-        .get(RELEASES_API)
+        .get(endpoint)
         .send()
         .map_err(|error| error.to_string())?;
     let response = response
         .error_for_status()
         .map_err(|error| format!("GitHub ответил с ошибкой: {error}"))?;
-    let release: ReleasePayload = response
-        .json()
-        .map_err(|error| format!("не удалось разобрать релиз: {error}"))?;
+    let release: ReleasePayload = if prerelease {
+        let releases: Vec<ReleasePayload> = response
+            .json()
+            .map_err(|error| format!("не удалось разобрать релизы: {error}"))?;
+        releases
+            .into_iter()
+            .next()
+            .ok_or_else(|| "в канале pre-release пока нет ни одного релиза".to_string())?
+    } else {
+        response
+            .json()
+            .map_err(|error| format!("не удалось разобрать релиз: {error}"))?
+    };
     let version = release.tag_name.trim().trim_start_matches('v').to_string();
     let suffix = platform_asset_suffix();
     let asset = release

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const DEFAULT_AUTH_URL: &str = "https://auth.spacestation14.com/";
+pub const FALLBACK_AUTH_URL: &str = "https://auth.fallback.spacestation14.com/";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
@@ -69,6 +70,40 @@ fn client() -> Result<reqwest::blocking::Client, String> {
     .map_err(|error| error.to_string())
 }
 
+fn auth_targets(auth_url: &str) -> Vec<String> {
+    let primary = normalize_auth_url(auth_url);
+    if primary == DEFAULT_AUTH_URL {
+        vec![primary, FALLBACK_AUTH_URL.to_string()]
+    } else {
+        vec![primary]
+    }
+}
+
+fn with_auth_fallback<T>(
+    auth_url: &str,
+    attempt: impl Fn(&str) -> Result<T, AuthError>,
+) -> Result<T, AuthError> {
+    let targets = auth_targets(auth_url);
+    let mut last: Option<AuthError> = None;
+    for (index, target) in targets.iter().enumerate() {
+        match attempt(target) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let retriable = error.code == "network";
+                let has_next = index + 1 < targets.len();
+                last = Some(error);
+                if !retriable || !has_next {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or(AuthError {
+        code: "network".into(),
+        message: "сеть недоступна".into(),
+    }))
+}
+
 fn deny_message(code: &str, errors: &[String]) -> AuthError {
     let code_clean = code.trim().to_ascii_lowercase();
     let message = match code_clean.as_str() {
@@ -100,6 +135,17 @@ struct AuthenticateBody {
 }
 
 pub fn authenticate(
+    auth_url: &str,
+    username: &str,
+    password: &str,
+    tfa_code: Option<&str>,
+) -> Result<LoginInfo, AuthError> {
+    with_auth_fallback(auth_url, |target| {
+        attempt_authenticate(target, username, password, tfa_code)
+    })
+}
+
+fn attempt_authenticate(
     auth_url: &str,
     username: &str,
     password: &str,
@@ -167,26 +213,44 @@ struct RefreshResponse {
 }
 
 pub fn refresh(auth_url: &str, login: &LoginInfo) -> Result<LoginInfo, String> {
+    with_auth_fallback(auth_url, |target| attempt_refresh(target, login))
+        .map_err(|error| error.message)
+}
+
+fn attempt_refresh(auth_url: &str, login: &LoginInfo) -> Result<LoginInfo, AuthError> {
     let url = format!("{}api/auth/refresh", normalize_auth_url(auth_url));
-    let client = client()?;
+    let client = client().map_err(|message| AuthError {
+        code: "network".into(),
+        message,
+    })?;
     let response = client
         .post(url)
         .json(&serde_json::json!({"token": login.token}))
         .send()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| AuthError {
+            code: "network".into(),
+            message: error.to_string(),
+        })?;
 
     if response.status().as_u16() == 401 {
-        return Err("токен истёк, войдите заново".into());
+        return Err(AuthError {
+            code: "expired".into(),
+            message: "токен истёк, войдите заново".into(),
+        });
     }
     if !response.status().is_success() {
-        return Err(format!(
-            "сервер авторизации ответил с ошибкой: {}",
-            response.status()
-        ));
+        return Err(AuthError {
+            code: "protocol".into(),
+            message: format!(
+                "сервер авторизации ответил с ошибкой: {}",
+                response.status()
+            ),
+        });
     }
-    let parsed: RefreshResponse = response
-        .json()
-        .map_err(|error| format!("сервер авторизации вернул некорректный ответ: {error}"))?;
+    let parsed: RefreshResponse = response.json().map_err(|error| AuthError {
+        code: "protocol".into(),
+        message: format!("сервер авторизации вернул некорректный ответ: {error}"),
+    })?;
     Ok(LoginInfo {
         token: parsed.new_token,
         username: login.username.clone(),
@@ -198,36 +262,64 @@ pub fn refresh(auth_url: &str, login: &LoginInfo) -> Result<LoginInfo, String> {
 }
 
 pub fn check_token(auth_url: &str, token: &str) -> Result<bool, String> {
+    with_auth_fallback(auth_url, |target| attempt_check_token(target, token))
+        .map_err(|error| error.message)
+}
+
+fn attempt_check_token(auth_url: &str, token: &str) -> Result<bool, AuthError> {
     let url = format!("{}api/auth/ping", normalize_auth_url(auth_url));
-    let client = client()?;
+    let client = client().map_err(|message| AuthError {
+        code: "network".into(),
+        message,
+    })?;
     let response = client
         .get(url)
         .header("Authorization", format!("SS14Auth {token}"))
         .send()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| AuthError {
+            code: "network".into(),
+            message: error.to_string(),
+        })?;
     let status = response.status().as_u16();
     match status {
         200 => Ok(true),
         401 => Ok(false),
-        other => Err(format!("сервер авторизации ответил с ошибкой: {other}")),
+        other => Err(AuthError {
+            code: "protocol".into(),
+            message: format!("сервер авторизации ответил с ошибкой: {other}"),
+        }),
     }
 }
 
 pub fn logout(auth_url: &str, token: &str) -> Result<(), String> {
+    with_auth_fallback(auth_url, |target| attempt_logout(target, token))
+        .map_err(|error| error.message)
+}
+
+fn attempt_logout(auth_url: &str, token: &str) -> Result<(), AuthError> {
     let url = format!("{}api/auth/logout", normalize_auth_url(auth_url));
-    let client = client()?;
+    let client = client().map_err(|message| AuthError {
+        code: "network".into(),
+        message,
+    })?;
     let response = client
         .post(url)
         .json(&serde_json::json!({"token": token}))
         .send()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| AuthError {
+            code: "network".into(),
+            message: error.to_string(),
+        })?;
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(format!(
-            "сервер авторизации ответил с ошибкой: {}",
-            response.status()
-        ))
+        Err(AuthError {
+            code: "protocol".into(),
+            message: format!(
+                "сервер авторизации ответил с ошибкой: {}",
+                response.status()
+            ),
+        })
     }
 }
 
@@ -245,6 +337,21 @@ mod tests {
         assert_eq!(
             normalize_auth_url(" https://auth.example.io/ "),
             "https://auth.example.io/"
+        );
+    }
+
+    #[test]
+    fn builds_fallback_targets() {
+        assert_eq!(
+            auth_targets(""),
+            vec![
+                "https://auth.spacestation14.com/".to_string(),
+                "https://auth.fallback.spacestation14.com/".to_string()
+            ]
+        );
+        assert_eq!(
+            auth_targets("https://auth.example.io"),
+            vec!["https://auth.example.io/".to_string()]
         );
     }
 

@@ -71,6 +71,20 @@ fn config_roundtrip() {
         rpc_fake: false,
         rpc_fake_name: "Illusio".into(),
         proxy_guard_launch: true,
+        dock_side: "bottom".into(),
+        corners: "normal".into(),
+        font: "default".into(),
+        custom_color: 0,
+        patchless: false,
+        stealth_registries: false,
+        admin_guid: false,
+        admin_guid_value: String::new(),
+        mod_logs: false,
+        filter_hubs: Vec::new(),
+        update_prerelease: false,
+        card_map: true,
+        card_preset: true,
+        card_round: true,
     };
     save_to(&path, &config).expect("save failed");
     let loaded = load_from(&path).expect("load failed");

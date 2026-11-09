@@ -150,6 +150,7 @@ class DownloadStateInfo {
     required this.engineSig,
     required this.info,
     this.bundleZip = '',
+    this.modules = const [],
   });
 
   final String phase;
@@ -165,6 +166,7 @@ class DownloadStateInfo {
   final String engineSig;
   final ServerFullInfo? info;
   final String bundleZip;
+  final List<String> modules;
 
   bool get isDone => phase == 'done';
 
@@ -234,6 +236,9 @@ class DownloadStateInfo {
       contentZip: raw['contentZip']?.toString() ?? '',
       engineSig: raw['engineSig']?.toString() ?? '',
       bundleZip: raw['bundleZip']?.toString() ?? '',
+      modules: ((raw['modules'] as List?) ?? const [])
+          .map((value) => value.toString())
+          .toList(),
       info: ServerFullInfo.fromMap(raw['info']),
     );
   }

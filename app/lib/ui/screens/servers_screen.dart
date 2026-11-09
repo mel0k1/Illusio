@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../widgets/press_scale.dart';
@@ -89,6 +91,10 @@ class _ServersScreenState extends State<ServersScreen> {
           if (controller.hideFull && server.full) {
             return false;
           }
+          if (server.hub.isNotEmpty &&
+              controller.filterHubs.contains(server.hub)) {
+            return false;
+          }
           final tags = ServerTagInfo.infer(server);
           final min = controller.filterMinPlayers;
           if (min > 0 && server.players < min) {
@@ -156,9 +162,11 @@ class _ServersScreenState extends State<ServersScreen> {
                       IconButton.filledTonal(
                         onPressed: () => _openFilters(context),
                         icon: Badge.count(
-                          count: controller.filterTags.length,
+                          count: controller.filterTags.length +
+                              controller.filterHubs.length,
                           isLabelVisible: controller.filterTags.isNotEmpty ||
                               controller.hideFull ||
+                              controller.filterHubs.isNotEmpty ||
                               controller.filterMinPlayers > 0 ||
                               controller.filterMaxPlayers > 0,
                           child: const Icon(Icons.tune, size: 22),
@@ -318,18 +326,19 @@ class _ServerTile extends StatelessWidget {
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            Flexible(
-                              child: Text(
-                                server.preset.isEmpty
-                                    ? server.address
-                                    : server.preset,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
+                            if (controller.cardPreset)
+                              Flexible(
+                                child: Text(
+                                  server.preset.isEmpty
+                                      ? server.address
+                                      : server.preset,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
                             ),
-                            if (server.map.isNotEmpty) ...[
+                            if (controller.cardMap && server.map.isNotEmpty) ...[
                               const SizedBox(width: 8),
                               Icon(Icons.map_outlined,
                                   size: 13, color: scheme.onSurfaceVariant),
@@ -346,6 +355,8 @@ class _ServerTile extends StatelessWidget {
                             ],
                           ],
                         ),
+                        if (controller.cardRound && server.roundStartedAt != null)
+                          _RoundTimer(start: server.roundStartedAt!),
                       ],
                     ),
                   ),
@@ -386,6 +397,65 @@ class _ServerTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RoundTimer extends StatefulWidget {
+  const _RoundTimer({required this.start});
+
+  final DateTime start;
+
+  @override
+  State<_RoundTimer> createState() => _RoundTimerState();
+}
+
+class _RoundTimerState extends State<_RoundTimer> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _elapsedLabel(S s) {
+    final elapsed = DateTime.now().toUtc().difference(widget.start);
+    if (elapsed.isNegative) {
+      return s.roundClock(0, 0);
+    }
+    return s.roundClock(elapsed.inHours, elapsed.inMinutes % 60);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.timelapse, size: 13, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            _elapsedLabel(S.of(context)),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -969,6 +1039,60 @@ class _FilterSheetState extends State<_FilterSheet> {
                 ],
               ),
               const SizedBox(height: 16),
+              Text(
+                s.hideHubsTitle,
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                s.hideHubsHint,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  final knownHubs = <String>{};
+                  for (final server in controller.hubServers) {
+                    if (server.hub.isNotEmpty) {
+                      knownHubs.add(server.hub);
+                    }
+                  }
+                  knownHubs.addAll(controller.hubs);
+                  final hidden = List<String>.from(controller.filterHubs);
+                  if (knownHubs.isEmpty) {
+                    return Text(
+                      s.hideHubsHint,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    );
+                  }
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final hub in knownHubs)
+                        FilterChip(
+                          selected: hidden.contains(hub),
+                          label: Text(_shortHub(hub)),
+                          onSelected: (value) {
+                            setState(() {
+                              if (value) {
+                                hidden.add(hub);
+                              } else {
+                                hidden.remove(hub);
+                              }
+                            });
+                            controller.setFilterHubs(hidden);
+                          },
+                        ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -977,6 +1101,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                         controller.setFilterTags([]);
                         controller.setFilterPlayers(0, 0);
                         controller.setHideFull(false);
+                        controller.setFilterHubs([]);
                         Navigator.of(context).pop();
                       },
                       child: Text(S.of(context).reset),
@@ -997,4 +1122,10 @@ class _FilterSheetState extends State<_FilterSheet> {
       ),
     );
   }
+}
+
+String _shortHub(String hub) {
+  final uri = Uri.tryParse(hub);
+  final host = uri?.host ?? '';
+  return host.isEmpty ? hub : host;
 }

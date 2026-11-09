@@ -152,6 +152,46 @@ pub struct Config {
     pub rpc_fake_name: String,
     #[serde(default = "default_true")]
     pub proxy_guard_launch: bool,
+    #[serde(default = "default_dock_side")]
+    pub dock_side: String,
+    #[serde(default = "default_corners")]
+    pub corners: String,
+    #[serde(default = "default_font")]
+    pub font: String,
+    #[serde(default)]
+    pub custom_color: i64,
+    #[serde(default)]
+    pub patchless: bool,
+    #[serde(default)]
+    pub stealth_registries: bool,
+    #[serde(default)]
+    pub admin_guid: bool,
+    #[serde(default)]
+    pub admin_guid_value: String,
+    #[serde(default)]
+    pub mod_logs: bool,
+    #[serde(default)]
+    pub filter_hubs: Vec<String>,
+    #[serde(default)]
+    pub update_prerelease: bool,
+    #[serde(default = "default_true")]
+    pub card_map: bool,
+    #[serde(default = "default_true")]
+    pub card_preset: bool,
+    #[serde(default = "default_true")]
+    pub card_round: bool,
+}
+
+fn default_dock_side() -> String {
+    "bottom".to_string()
+}
+
+fn default_corners() -> String {
+    "normal".to_string()
+}
+
+fn default_font() -> String {
+    "default".to_string()
 }
 
 fn default_hide_level() -> i64 {
@@ -430,5 +470,53 @@ mod tests {
         assert_eq!(config.proxy().host, "1.1.1.1");
         config.proxy_selected = "missing".into();
         assert_eq!(config.proxy().host, "1.1.1.1");
+    }
+
+    #[test]
+    fn keeps_look_and_new_fields() {
+        let raw = r#"{
+            "dock_side": "left",
+            "corners": "round",
+            "font": "manrope",
+            "custom_color": 65280,
+            "patchless": true,
+            "stealth_registries": true,
+            "admin_guid": true,
+            "admin_guid_value": "0123456789abcdef0123456789abcdef",
+            "mod_logs": true,
+            "filter_hubs": ["https://hub.example.com/"],
+            "update_prerelease": true,
+            "card_map": false,
+            "card_preset": false,
+            "card_round": false
+        }"#;
+        let parsed: Config = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.dock_side, "left");
+        assert_eq!(parsed.corners, "round");
+        assert_eq!(parsed.font, "manrope");
+        assert_eq!(parsed.custom_color, 65280);
+        assert!(parsed.patchless);
+        assert!(parsed.stealth_registries);
+        assert!(parsed.admin_guid);
+        assert_eq!(parsed.admin_guid_value, "0123456789abcdef0123456789abcdef");
+        assert!(parsed.mod_logs);
+        assert_eq!(parsed.filter_hubs, vec!["https://hub.example.com/"]);
+        assert!(parsed.update_prerelease);
+        assert!(!parsed.card_map);
+        assert!(!parsed.card_preset);
+        assert!(!parsed.card_round);
+        let round = serde_json::to_string(&parsed).unwrap();
+        let reparsed: Config = serde_json::from_str(&round).unwrap();
+        assert_eq!(reparsed.dock_side, "left");
+        assert_eq!(reparsed.custom_color, 65280);
+        assert!(reparsed.patchless);
+        assert_eq!(reparsed.filter_hubs.len(), 1);
+        let empty: Config = serde_json::from_str("{}").unwrap();
+        assert_eq!(empty.dock_side, "bottom");
+        assert_eq!(empty.corners, "normal");
+        assert_eq!(empty.font, "default");
+        assert!(empty.card_map);
+        assert!(empty.card_preset);
+        assert!(empty.card_round);
     }
 }

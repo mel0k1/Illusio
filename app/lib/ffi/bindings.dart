@@ -126,6 +126,21 @@ class Core {
   static final Pointer<Utf8> Function() _logsDir = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_logs_dir')
       .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _ipcInit = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_ipc_init')
+      .asFunction();
+  static final Pointer<Utf8> Function() _ipcPoll = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_ipc_poll')
+      .asFunction();
+  static final Pointer<Utf8> Function() _launchStatus = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_launch_status')
+      .asFunction();
+  static final Pointer<Utf8> Function() _health = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_health')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _engineModules = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_engine_modules')
+      .asFunction();
   static final void Function(Pointer<Utf8>) _free = _lib
       .lookup<NativeFunction<FreeNative>>('illusio_free')
       .asFunction();
@@ -220,6 +235,17 @@ class Core {
       _withString(json, _enginesRemove);
 
   static Map<String, dynamic> cullContent() => _run(_cullContent);
+
+  static Map<String, dynamic> ipcInit(String json) => _withString(json, _ipcInit);
+
+  static Map<String, dynamic> ipcPoll() => _run(_ipcPoll);
+
+  static Map<String, dynamic> launchStatus() => _run(_launchStatus);
+
+  static Map<String, dynamic> health() => _run(_health);
+
+  static Map<String, dynamic> engineModules(String json) =>
+      _withString(json, _engineModules);
 
   static const String registerUrl =
       'https://account.spacestation14.com/Register';

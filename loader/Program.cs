@@ -611,6 +611,7 @@ internal class Program
 
     private bool Run()
     {
+        var opened = new HashSet<string>(StringComparer.Ordinal) { RobustAssemblyName };
         if (!TryOpenAssembly(RobustAssemblyName, out var clientAssembly))
         {
             Console.WriteLine("Unable to locate Robust.Client.dll in engine build!");
@@ -630,16 +631,29 @@ internal class Program
             foreach (var (api, archive) in overlays)
             {
                 extraMounts.Add(new ApiMount(api, "/"));
+                ModLog.Record($"overlay: {api}");
             }
 
-            ApplyBuiltInPatches(clientAssembly);
-            TryOpenAssembly("Robust.Shared", out _);
-            ApplyMods(overlays);
-            ApplyEnginePatches();
-            ApplyBackports();
+            PreloadEngineModules(opened);
+
+            if (Envsey.Get("ILLUSIO_PATCHLESS") == "1")
+            {
+                Console.WriteLine("[ILLUSIO-PATCH] patchless: все патчи отключены");
+                ModLog.Record("patchless: патчи отключены");
+            }
+            else
+            {
+                ApplyBuiltInPatches(clientAssembly);
+                ApplyMods(overlays);
+                ApplyEnginePatches();
+                ApplyBackports();
+            }
+
+            Registries.Apply();
 
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
 
+            ModLog.Flush();
             Envsey.Scrub();
             loader.Main(args);
         }
@@ -651,6 +665,36 @@ internal class Program
             }
         }
         return true;
+    }
+
+    private void PreloadEngineModules(HashSet<string> opened)
+    {
+        if (!TryOpenAssemblyOnce("Robust.Shared", opened, out _))
+            Console.WriteLine("[ILLUSIO] Robust.Shared не найден в движке");
+
+        foreach (var pair in Envsey.All())
+        {
+            if (!pair.Key.StartsWith("ROBUST_MODULE_", StringComparison.Ordinal))
+                continue;
+
+            var name = (pair.Value ?? "").Trim();
+            if (name.Length == 0)
+                continue;
+
+            if (TryOpenAssemblyOnce(name, opened, out _))
+                ModLog.Record($"module: {name}");
+            else
+                Console.WriteLine($"[ILLUSIO] модуль {name} не найден в движке");
+        }
+    }
+
+    private bool TryOpenAssemblyOnce(string name, HashSet<string> opened, out Assembly? assembly)
+    {
+        assembly = null;
+        if (!opened.Add(name))
+            return true;
+
+        return TryOpenAssembly(name, out assembly);
     }
 
     private void ApplyBuiltInPatches(Assembly clientAssembly)
@@ -797,6 +841,7 @@ internal class Program
                     ? Path.GetFileNameWithoutExtension(path)
                     : name;
                 Console.WriteLine($"[ILLUSIO-MODS] загружен {displayName} ({Path.GetFileName(path)})");
+                ModLog.Record($"mod: {displayName} ({path})");
                 result.Add(new ModInfo(path, assembly, marker, displayName, description ?? "", preload));
             }
             catch (Exception e)
@@ -869,10 +914,12 @@ internal class Program
                     null,
                     parameters.Length == 1 ? new object[] { harmony } : Array.Empty<object>());
                 Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: патчи применены");
+                ModLog.Record($"patch: {mod.Name}");
             }
             catch (Exception e)
             {
                 Console.WriteLine($"[ILLUSIO-MODS] {mod.Name}: {e.InnerException?.Message ?? e.Message}");
+                ModLog.Record($"failed: {mod.Name}: {e.InnerException?.Message ?? e.Message}");
                 failed.Add(mod);
             }
         }

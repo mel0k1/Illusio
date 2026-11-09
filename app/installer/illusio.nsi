@@ -83,6 +83,11 @@ Section "Install"
   WriteRegStr HKCR "ss14" "URL Protocol" ""
   WriteRegStr HKCR "ss14\DefaultIcon" "" "$INSTDIR\${APPMAIN},0"
   WriteRegStr HKCR "ss14\shell\open\command" "" '"$INSTDIR\${APPMAIN}" "%1"'
+
+  WriteRegStr HKCR "ss14s" "" "URL:Space Station 14"
+  WriteRegStr HKCR "ss14s" "URL Protocol" ""
+  WriteRegStr HKCR "ss14s\DefaultIcon" "" "$INSTDIR\${APPMAIN},0"
+  WriteRegStr HKCR "ss14s\shell\open\command" "" '"$INSTDIR\${APPMAIN}" "%1"'
 SectionEnd
 
 Section "Uninstall"
@@ -98,6 +103,13 @@ Section "Uninstall"
   DeleteRegKey HKCR "ss14\shell"
   DeleteRegKey HKCR "ss14\DefaultIcon"
   DeleteRegKey HKCR "ss14"
+
+  DeleteRegKey HKCR "ss14s\shell\open\command"
+  DeleteRegKey HKCR "ss14s\shell\open"
+  DeleteRegKey HKCR "ss14s\shell"
+  DeleteRegKey HKCR "ss14s\DefaultIcon"
+  DeleteRegKey HKCR "ss14s"
+
   DeleteRegKey HKCU "${REGKEY}"
   DeleteRegKey HKCU "Software\${APPNAME}"
 SectionEnd

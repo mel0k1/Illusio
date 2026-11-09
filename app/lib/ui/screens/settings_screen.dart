@@ -30,12 +30,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   final TextEditingController _hwid = TextEditingController();
   final TextEditingController _rpcFakeName = TextEditingController();
   final TextEditingController _hex = TextEditingController();
+  final TextEditingController _adminGuid = TextEditingController();
   late final TabController _tabs = TabController(length: 5, vsync: this);
   bool _proxyBusy = false;
   String _proxyResult = '';
   Color _proxyResultColor = Colors.transparent;
   String _configPath = '';
   bool _pathsLoaded = false;
+  Map<String, dynamic>? _health;
 
   static const List<int> _customSwatches = [
     0xFFF2F2F3,
@@ -63,6 +65,53 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
     });
     _restore();
+    _loadHealth();
+  }
+
+  Future<void> _loadHealth() async {
+    final result = await Isolate.run(Core.health);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _health = result;
+    });
+  }
+
+  Future<void> _exportTheme() async {
+    final s = S.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final location = await getSaveLocation(
+      suggestedName: 'illusio-theme.json',
+      acceptedTypeGroups: [const XTypeGroup(label: 'json', extensions: ['json'])],
+    );
+    if (location == null) {
+      return;
+    }
+    await widget.controller.exportTheme(location.path);
+    messenger.showSnackBar(illusioSnackBar(s.themeExported));
+  }
+
+  Future<void> _importTheme() async {
+    final s = S.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final typeGroup = XTypeGroup(label: s.themeFileLabel, extensions: ['json']);
+    final file = await openFile(acceptedTypeGroups: [typeGroup]);
+    if (file == null) {
+      return;
+    }
+    final ok = await widget.controller.importTheme(file.path);
+    if (!mounted) {
+      return;
+    }
+    messenger.showSnackBar(
+      illusioSnackBar(ok ? s.themeImportOk : s.themeImportBad),
+    );
+    if (ok) {
+      setState(() {
+        _adminGuid.text = widget.controller.adminGuidValue;
+      });
+    }
   }
 
   Future<void> _restore() async {
@@ -78,6 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       _override.text = controller.usernameOverride;
       _hwid.text = controller.hwidValue;
       _rpcFakeName.text = controller.rpcFakeName;
+      _adminGuid.text = controller.adminGuidValue;
     });
     final path = await controller.configDirPath();
     if (!mounted) {
@@ -98,6 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     _hwid.dispose();
     _rpcFakeName.dispose();
     _hex.dispose();
+    _adminGuid.dispose();
     _tabs.dispose();
     super.dispose();
   }
@@ -521,6 +572,23 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _exportTheme,
+                    icon: const Icon(Icons.ios_share, size: 18),
+                    label: Text(s.themeExport),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _importTheme,
+                    icon: const Icon(Icons.download_outlined, size: 18),
+                    label: Text(s.themeImport),
+                  ),
+                ],
+              ),
               if (controller.theme == 'custom') ...[
                 const SizedBox(height: 18),
                 Text(s.customColorLabel,
@@ -756,6 +824,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                 value: controller.vsync,
                 onChanged: controller.setVsync,
               ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.patchlessLabel,
+                subtitle: s.patchlessHint,
+                value: controller.patchless,
+                onChanged: controller.setPatchless,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.adminGuidLabel,
+                subtitle: s.adminGuidHint,
+                value: controller.adminGuid,
+                onChanged: controller.setAdminGuid,
+              ),
+              if (controller.adminGuid) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _adminGuid,
+                  decoration: illusioInput(s.adminGuidValueLabel).copyWith(
+                    errorText: _adminGuidValid(controller.adminGuidValue)
+                        ? null
+                        : s.hwidInvalid,
+                  ),
+                  onChanged: controller.setAdminGuidValue,
+                ),
+              ],
             ],
           ),
         ),
@@ -900,6 +994,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                 subtitle: s.clientLogsHint,
                 value: controller.clientLogs,
                 onChanged: controller.setClientLogs,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.modLogsLabel,
+                subtitle: s.modLogsHint,
+                value: controller.modLogs,
+                onChanged: controller.setModLogs,
               ),
               const SizedBox(height: 16),
               Align(
@@ -1233,6 +1334,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                 value: controller.prefetchFavorites,
                 onChanged: controller.setPrefetchFavorites,
               ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.updatePrereleaseLabel,
+                subtitle: s.updatePrereleaseHint,
+                value: controller.updatePrerelease,
+                onChanged: controller.setUpdatePrerelease,
+              ),
               if (controller.updateVersion.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -1469,6 +1577,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onChanged: controller.setBackportsNoAny,
                 ),
               ],
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.stealthRegistriesLabel,
+                subtitle: s.stealthRegistriesHint,
+                value: controller.stealthRegistries,
+                onChanged: controller.setStealthRegistries,
+              ),
             ],
           ),
         ),
@@ -1516,10 +1631,119 @@ class _SettingsScreenState extends State<SettingsScreen>
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
+              const SizedBox(height: 16),
+              _healthSection(context, controller, s),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  bool _adminGuidValid(String value) {
+    final guid = value.trim().replaceAll(RegExp(r'^\{|\}$'), '');
+    if (guid.isEmpty) {
+      return true;
+    }
+    return guid.length == 32 &&
+        RegExp(r'^[0-9a-fA-F]+$').hasMatch(guid);
+  }
+
+  Widget _healthSection(BuildContext context, AppController controller, S s) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final result = _health;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(s.healthSection, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (result == null || result['ok'] != true)
+          Text(
+            result == null
+                ? s.loadingDots
+                : s.healthCheckFailed(
+                    result['error']?.toString() ?? '',
+                  ),
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          )
+        else
+          ..._healthEntries(context, result, s),
+      ],
+    );
+  }
+
+  List<Widget> _healthEntries(
+    BuildContext context,
+    Map<String, dynamic> result,
+    S s,
+  ) {
+    final health = (result['health'] as Map?) ?? const {};
+    final entries = <(String, Object?, String, String)>[
+      (
+        s.healthVcRedist,
+        health['vcRedistInstalled'],
+        s.healthVcRedistMissing,
+        s.healthVcRedistOk(
+          (health['vcRedistVersion'] ?? '').toString(),
+        ),
+      ),
+      (
+        s.healthWine,
+        health['wineInstalled'],
+        s.healthWineMissing,
+        s.healthWineOk,
+      ),
+      (
+        s.healthRosetta,
+        health['rosettaInstalled'],
+        s.healthRosettaMissing,
+        s.healthRosettaOk,
+      ),
+    ];
+    return [
+      for (final (title, installed, missing, ok) in entries)
+        if (installed != null)
+          _healthRow(
+            context,
+            title,
+            installed == true ? ok : missing,
+            bad: installed != true,
+          ),
+    ];
+  }
+
+  Widget _healthRow(
+    BuildContext context,
+    String title,
+    String value, {
+    required bool bad,
+  }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 180,
+            child: Text(
+              title,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: bad ? scheme.error : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

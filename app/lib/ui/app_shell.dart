@@ -54,18 +54,87 @@ class _AppShellState extends State<AppShell> {
   int _index = 0;
   bool _proxyDialogShown = false;
   bool _guardDialogShown = false;
+  bool _crashDialogShown = false;
 
   @override
   void initState() {
     super.initState();
     _consumePendingConnect();
     widget.controller.addListener(_watchProxy);
+    widget.controller.addListener(_watchCrash);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_watchProxy);
+    widget.controller.removeListener(_watchCrash);
     super.dispose();
+  }
+
+  void _watchCrash() {
+    if (_crashDialogShown || widget.controller.crashDiag == null || !mounted) {
+      return;
+    }
+    _crashDialogShown = true;
+    _showCrashDialog().whenComplete(() => _crashDialogShown = false);
+  }
+
+  Future<void> _showCrashDialog() async {
+    final crash = widget.controller.crashDiag;
+    if (crash == null) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.bug_report_outlined),
+        title: Text(S.of(dialogContext).crashTitle),
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(S.of(dialogContext).crashBody(crash.exitCode)),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext)
+                      .colorScheme
+                      .surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    crash.logTail.isEmpty
+                        ? S.of(dialogContext).crashLogEmpty
+                        : crash.logTail,
+                    style: Theme.of(dialogContext)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(S.of(dialogContext).crashClose),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    widget.controller.dismissCrash();
   }
 
   void _watchProxy() {

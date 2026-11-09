@@ -1,6 +1,6 @@
 [package]
 name = "illusio-core"
-version = "0.8.0"
+version = "0.10.0"
 edition = "2021"
 description = "Illusio launcher core"
 license = "MIT"
@@ -18,3 +18,12 @@ sha2 = "0.10"
 blake2 = "0.10"
 zstd = "0.13"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+] }

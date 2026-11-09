@@ -2,9 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::config::ProxyConfig;
 use crate::socks::{parse_udp_address, prepare_udp_relay, PreparedRelay};
+
+const CRASH_WINDOW: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LaunchSpec {
@@ -92,6 +96,124 @@ pub struct LaunchSpec {
     pub rpc_fake: bool,
     #[serde(default, rename = "rpc_fake_name")]
     pub rpc_fake_name: String,
+    #[serde(default, rename = "patchless")]
+    pub patchless: bool,
+    #[serde(default, rename = "stealth_registries")]
+    pub stealth_registries: bool,
+    #[serde(default, rename = "admin_guid")]
+    pub admin_guid: bool,
+    #[serde(default, rename = "admin_guid_value")]
+    pub admin_guid_value: String,
+    #[serde(default, rename = "mod_logs")]
+    pub mod_logs: bool,
+    #[serde(default, rename = "modules")]
+    pub modules: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct LaunchStatus {
+    pub pid: u32,
+    pub running: bool,
+    pub exited: bool,
+    pub crashed: bool,
+    pub exit_code: i64,
+    #[serde(rename = "logTail")]
+    pub log_tail: String,
+    #[serde(rename = "launchedAt")]
+    pub launched_at: i64,
+}
+
+static LAST_LAUNCH: OnceLock<Mutex<Option<LaunchStatus>>> = OnceLock::new();
+
+fn record_launch(patch: impl FnOnce(&mut LaunchStatus)) {
+    let cell = LAST_LAUNCH.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cell.lock() {
+        let status = guard.get_or_insert_with(LaunchStatus::default);
+        patch(status);
+    }
+}
+
+pub fn status_snapshot() -> LaunchStatus {
+    match LAST_LAUNCH.get().and_then(|cell| cell.lock().ok()) {
+        Some(guard) => guard.clone().unwrap_or_default(),
+        None => LaunchStatus::default(),
+    }
+}
+
+fn unix_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn log_tail(log_dir: &str, limit: usize) -> String {
+    let dir = PathBuf::from(log_dir.trim());
+    if dir.as_os_str().is_empty() {
+        return String::new();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for name in ["client.stderr.log", "client.stdout.log"] {
+        let path = dir.join(name);
+        let Ok(data) = fs::read(&path) else {
+            continue;
+        };
+        let start = data.len().saturating_sub(limit);
+        let text = String::from_utf8_lossy(&data[start..]);
+        let text = text.trim();
+        if !text.is_empty() {
+            parts.push(text.to_string());
+        }
+    }
+    parts.join("\n")
+}
+
+fn watch_child(mut child: std::process::Child, log_dir: String, relay: Option<PreparedRelay>) {
+    std::thread::spawn(move || {
+        let pid = child.id();
+        let started = Instant::now();
+        record_launch(|status| {
+            status.pid = pid;
+            status.running = true;
+            status.crashed = false;
+            status.launched_at = unix_millis();
+        });
+        let deadline = started + CRASH_WINDOW;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let quick = started.elapsed() <= CRASH_WINDOW;
+                    let tail = log_tail(&log_dir, 4096);
+                    record_launch(|entry| {
+                        entry.running = false;
+                        entry.exited = true;
+                        entry.crashed = quick;
+                        entry.exit_code = status.code().unwrap_or(-1) as i64;
+                        entry.log_tail = tail;
+                    });
+                    if let Some(relay) = relay {
+                        relay.stop();
+                    }
+                    break;
+                }
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        if let Some(relay) = relay {
+                            relay.start(child);
+                        }
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Err(_) => {
+                    if let Some(relay) = relay {
+                        relay.stop();
+                    }
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn default_hide_level() -> i64 {
@@ -182,9 +304,14 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
         return env;
     }
     env.push(("ROBUST_AUTH_TOKEN".into(), token.to_string()));
-    let user_id = spec.auth_user_id.trim();
+    let mut user_id = spec.auth_user_id.trim().to_string();
+    if spec.admin_guid {
+        if let Some(guid) = normalize_guid(&spec.admin_guid_value) {
+            user_id = guid;
+        }
+    }
     if !user_id.is_empty() {
-        env.push(("ROBUST_AUTH_USERID".into(), user_id.to_string()));
+        env.push(("ROBUST_AUTH_USERID".into(), user_id));
     }
     let pubkey = spec.auth_pubkey.trim();
     if !pubkey.is_empty() {
@@ -289,7 +416,31 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
             env.push(("ILLUSIO_RPC_USERNAME".into(), fake.to_string()));
         }
     }
+    if spec.patchless {
+        env.push(("ILLUSIO_PATCHLESS".into(), "1".into()));
+    }
+    if spec.stealth_registries {
+        env.push(("ILLUSIO_STEALTH_REGISTRIES".into(), "1".into()));
+    }
+    if spec.mod_logs {
+        env.push(("ILLUSIO_MOD_LOGS".into(), "1".into()));
+        if let Some(dir) = crate::config::logs_dir() {
+            env.push(("ILLUSIO_LOGS_DIR".into(), dir.display().to_string()));
+        }
+    }
+    let modules = clean_list(&spec.modules);
+    for pair in crate::modules::env_pairs(&modules) {
+        env.push(pair);
+    }
     env
+}
+
+pub fn normalize_guid(raw: &str) -> Option<String> {
+    let value = raw.trim().trim_matches(['{', '}']).to_ascii_lowercase();
+    if value.len() != 32 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(value)
 }
 
 pub fn normalize_hwid(raw: &str) -> Option<String> {
@@ -433,11 +584,7 @@ pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
         .spawn()
         .map_err(|error| format!("не удалось запустить клиент: {error}"))?;
     let pid = child.id();
-    if let Some(relay) = relay {
-        relay.start(child);
-    } else {
-        drop(child);
-    }
+    watch_child(child, spec.log_dir.clone(), relay);
     Ok(pid)
 }
 
@@ -481,11 +628,7 @@ fn launch_loader(spec: &LaunchSpec, proxy: &ProxyConfig) -> Result<u32, String> 
         .spawn()
         .map_err(|error| format!("не удалось запустить клиент: {error}"))?;
     let pid = child.id();
-    if let Some(relay) = relay {
-        relay.start(child);
-    } else {
-        drop(child);
-    }
+    watch_child(child, spec.log_dir.clone(), relay);
     Ok(pid)
 }
 
@@ -728,6 +871,92 @@ mod tests {
         assert_eq!(normalize_hwid("abc"), None);
         assert_eq!(normalize_hwid(""), None);
         assert_eq!(normalize_hwid("xy"), None);
+    }
+
+    #[test]
+    fn normalizes_admin_guids() {
+        assert_eq!(
+            normalize_guid("{0123456789ABCDEF0123456789abcdef}").as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(normalize_guid("short"), None);
+        assert_eq!(normalize_guid("zz23456789abcdef0123456789abcdef"), None);
+        assert_eq!(normalize_guid(""), None);
+    }
+
+    #[test]
+    fn env_carries_patchless_and_modules() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            patchless: true,
+            stealth_registries: true,
+            mod_logs: true,
+            modules: vec![
+                "Robust.Client".into(),
+                " ".into(),
+                "Robust.Client.WebView".into(),
+            ],
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("ILLUSIO_PATCHLESS".into(), "1".into())));
+        assert!(env.contains(&("ILLUSIO_STEALTH_REGISTRIES".into(), "1".into())));
+        assert!(env.contains(&("ILLUSIO_MOD_LOGS".into(), "1".into())));
+        assert!(env.iter().any(|(key, _)| key == "ILLUSIO_LOGS_DIR"));
+        assert!(env.contains(&("ROBUST_MODULE_ROBUST_CLIENT".into(), "Robust.Client".into())));
+        assert!(env.contains(&(
+            "ROBUST_MODULE_ROBUST_CLIENT_WEBVIEW".into(),
+            "Robust.Client.WebView".into()
+        )));
+        let disabled = build_env(&LaunchSpec {
+            auth_token: "tok".into(),
+            ..LaunchSpec::default()
+        });
+        assert!(!disabled.iter().any(|(key, _)| key == "ILLUSIO_PATCHLESS"));
+        assert!(!disabled
+            .iter()
+            .any(|(key, _)| key == "ILLUSIO_STEALTH_REGISTRIES"));
+    }
+
+    #[test]
+    fn admin_guid_replaces_user_id() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            auth_user_id: "real-guid".into(),
+            admin_guid: true,
+            admin_guid_value: "0123456789ABCDEF0123456789ABCDEF".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&(
+            "ROBUST_AUTH_USERID".into(),
+            "0123456789abcdef0123456789abcdef".into()
+        )));
+        let invalid = LaunchSpec {
+            auth_token: "tok".into(),
+            auth_user_id: "real-guid".into(),
+            admin_guid: true,
+            admin_guid_value: "nope".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&invalid);
+        assert!(env.contains(&("ROBUST_AUTH_USERID".into(), "real-guid".into())));
+        let off = LaunchSpec {
+            auth_token: "tok".into(),
+            auth_user_id: "real-guid".into(),
+            admin_guid_value: "0123456789abcdef0123456789abcdef".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&off);
+        assert!(env.contains(&("ROBUST_AUTH_USERID".into(), "real-guid".into())));
+    }
+
+    #[test]
+    fn launch_status_defaults() {
+        let status = status_snapshot();
+        assert!(!status.running);
+        assert!(!status.crashed);
+        assert_eq!(status.pid, 0);
     }
 
     #[test]

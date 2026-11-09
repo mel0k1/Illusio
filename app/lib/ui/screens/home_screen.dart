@@ -1,3 +1,4 @@
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
@@ -21,11 +22,28 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _direct = TextEditingController();
+  bool _dragging = false;
 
   @override
   void dispose() {
     _direct.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleDrop(DropDoneDetails details) async {
+    if (!mounted) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
+    final zips = details.files
+        .where((file) => file.path.toLowerCase().endsWith('.zip'))
+        .toList();
+    if (zips.isEmpty) {
+      messenger.showSnackBar(illusioSnackBar(s.dropZipFailed));
+      return;
+    }
+    await bundleFlow(context, widget.controller, zips.first.path);
   }
 
   Future<void> _openAddDialog() async {
@@ -161,7 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListenableBuilder(
+    return DropTarget(
+      onDragDone: _handleDrop,
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      child: ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
         final s = S.of(context);
@@ -191,6 +213,47 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: _pickBundle,
                         icon: const Icon(Icons.movie_outlined, size: 20),
                         label: Text(s.launchReplay),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _dragging
+                            ? scheme.primaryContainer
+                            : scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _dragging
+                              ? scheme.primary
+                              : scheme.outlineVariant,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.download_for_offline_outlined,
+                            size: 20,
+                            color: _dragging
+                                ? scheme.onPrimaryContainer
+                                : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _dragging ? s.dropZipActive : s.dropZipHint,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: _dragging
+                                        ? scheme.onPrimaryContainer
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 28),
@@ -234,6 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         );
       },
+      ),
     );
   }
 }

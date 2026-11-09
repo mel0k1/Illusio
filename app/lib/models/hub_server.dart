@@ -12,6 +12,7 @@ class HubServer {
     required this.runLevel,
     required this.roundId,
     required this.statusMessage,
+    this.roundStartTime = '',
     this.hub = '',
   });
 
@@ -25,6 +26,7 @@ class HubServer {
   final int runLevel;
   final int roundId;
   final String statusMessage;
+  final String roundStartTime;
   final String hub;
 
   static String _string(Object? value) => value?.toString() ?? '';
@@ -65,11 +67,20 @@ class HubServer {
       runLevel: _int(raw['run_level']),
       roundId: _int(raw['round_id']),
       statusMessage: _string(raw['status_message']),
+      roundStartTime: _string(raw['round_start_time']),
       hub: _string(raw['hub']),
     );
   }
 
   bool get empty => address.isEmpty;
+
+  DateTime? get roundStartedAt {
+    final raw = roundStartTime.trim();
+    if (raw.isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(raw)?.toUtc();
+  }
 
   bool get full => softMaxPlayers > 0 && players >= softMaxPlayers;
 

@@ -43,6 +43,39 @@ void main() {
     expect(server.empty, isTrue);
   });
 
+  test('round start time parses and tolerates junk', () {
+    final server = HubServer.fromMap({
+      'address': 'ss14://example.com',
+      'round_start_time': '2026-01-01T10:00:00Z',
+    });
+    final started = server.roundStartedAt;
+    expect(started, isNotNull);
+    expect(started!.isUtc, isTrue);
+    expect(
+      server.roundStartedAt!.toIso8601String(),
+      '2026-01-01T10:00:00.000Z',
+    );
+
+    final broken = HubServer.fromMap({
+      'address': 'ss14://example.com',
+      'round_start_time': 'not-a-date',
+    });
+    expect(broken.roundStartedAt, isNull);
+
+    final missing = HubServer.fromMap({'address': 'ss14://example.com'});
+    expect(missing.roundStartTime, isEmpty);
+    expect(missing.roundStartedAt, isNull);
+  });
+
+  test('round clock formats hours and minutes', () {
+    const ru = S('ru');
+    const en = S('en');
+    expect(ru.roundClock(0, 5), '5 м');
+    expect(ru.roundClock(1, 23), '1 ч 23 м');
+    expect(en.roundClock(0, 5), '5m');
+    expect(en.roundClock(2, 7), '2h 7m');
+  });
+
   test('mod entry parses and formats size', () {
     final mod = ModEntry.fromMap({
       'file_name': 'pack_a.zip',

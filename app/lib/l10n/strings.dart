@@ -628,6 +628,99 @@ class S {
   String get proxyGuardBlocked => ru
       ? 'запуск остановлен: прокси не отвечает'
       : 'launch stopped: proxy is not responding';
+
+  String get patchlessLabel => ru ? 'Patchless-режим' : 'Patchless mode';
+  String get patchlessHint => ru
+      ? 'запускать игру без каких-либо патчей и скрытия, только загрузка модов'
+      : 'run the game without any patches or stealth, only mod loading';
+  String get stealthRegistriesLabel =>
+      ru ? 'Зачистка следов в реестре' : 'Registry trace cleanup';
+  String get stealthRegistriesHint => ru
+      ? 'убирать упоминания Illusio из недавних файлов и диалогов Windows'
+      : 'remove Illusio mentions from Windows recent files and dialogs';
+  String get adminGuidLabel => ru ? 'Подмена GUID' : 'GUID spoofing';
+  String get adminGuidHint => ru
+      ? 'отправлять серверу другой идентификатор пользователя вместо настоящего'
+      : 'send a different user id to the server instead of the real one';
+  String get adminGuidValueLabel =>
+      ru ? 'GUID (32 hex-символа)' : 'GUID (32 hex characters)';
+  String get modLogsLabel => ru ? 'Журнал модов' : 'Mod log';
+  String get modLogsHint => ru
+      ? 'писать mods.log в папку логов: какие моды и модули загрузились'
+      : 'write mods.log to the logs folder: which mods and modules loaded';
+  String get cardFieldsLabel =>
+      ru ? 'Поля карточки сервера' : 'Server card fields';
+  String get cardMapLabel => ru ? 'Показывать карту' : 'Show map';
+  String get cardPresetLabel => ru ? 'Показывать режим' : 'Show preset';
+  String get cardRoundLabel => ru ? 'Показывать время раунда' : 'Show round time';
+  String get updatePrereleaseLabel =>
+      ru ? 'Pre-release обновления' : 'Pre-release updates';
+  String get updatePrereleaseHint => ru
+      ? 'получать обновления из канала pre-release'
+      : 'receive updates from the pre-release channel';
+  String get hideHubsTitle => ru ? 'Скрыть хабы' : 'Hide hubs';
+  String get hideHubsHint => ru
+      ? 'отмеченные хабы не попадут в список серверов'
+      : 'marked hubs are excluded from the server list';
+  String roundDurationLabel(String value) =>
+      ru ? 'раунд идёт $value' : 'round running for $value';
+
+  String roundClock(int hours, int minutes) {
+    if (hours > 0) {
+      return ru ? '$hours ч $minutes м' : '${hours}h ${minutes}m';
+    }
+    return ru ? '$minutes м' : '${minutes}m';
+  }
+
+  String get crashTitle => ru ? 'Клиент упал при запуске' : 'Client crashed on launch';
+  String crashBody(int code) => ru
+      ? 'Клиент завершился с кодом $code через мгновение после запуска. Хвост лога:'
+      : 'The client exited with code $code right after launch. Log tail:';
+  String get crashClose => ru ? 'Понятно' : 'Got it';
+  String get crashLogEmpty => ru
+      ? 'логи клиента пусты — включите «Логи клиента» в настройках'
+      : 'client logs are empty — enable "Client logs" in settings';
+
+  String get themeExport => ru ? 'Экспорт темы' : 'Export theme';
+  String get themeImport => ru ? 'Импорт темы' : 'Import theme';
+  String get themeImportOk =>
+      ru ? 'Тема импортирована' : 'Theme imported';
+  String get themeImportBad => ru
+      ? 'Файл не похож на тему Illusio'
+      : 'The file does not look like an Illusio theme';
+  String get themeFileLabel => ru ? 'Файл темы' : 'Theme file';
+  String get themeExported => ru ? 'Тема сохранена' : 'Theme saved';
+
+  String get dropZipHint => ru
+      ? 'перетащите zip-архив сборки сюда, чтобы подключиться'
+      : 'drop a content bundle zip here to connect';
+  String get dropZipActive =>
+      ru ? 'Отпустите, чтобы установить' : 'Drop to install';
+  String get dropZipFailed => ru
+      ? 'не удалось установить: это не zip-архив сборки'
+      : 'install failed: this is not a content bundle zip';
+
+  String get healthSection =>
+      ru ? 'Состояние системы' : 'System health';
+  String get healthVcRedist =>
+      ru ? 'VC++ Redistributable' : 'VC++ Redistributable';
+  String get healthVcRedistMissing => ru
+      ? 'не установлен — игра не запустится; установите VC++ 2015–2022 x64'
+      : 'not installed — the game will not start; install VC++ 2015–2022 x64';
+  String healthVcRedistOk(String version) =>
+      ru ? 'установлен ($version)' : 'installed ($version)';
+  String get healthWine => ru ? 'Wine' : 'Wine';
+  String get healthWineMissing => ru
+      ? 'не найден — Windows-сборки запустить не получится'
+      : 'not found — Windows builds cannot be launched';
+  String get healthWineOk => ru ? 'доступен' : 'available';
+  String get healthRosetta => ru ? 'Rosetta 2' : 'Rosetta 2';
+  String get healthRosettaMissing => ru
+      ? 'не установлена — x86_64-сборки не запустятся'
+      : 'not installed — x86_64 builds will not start';
+  String get healthRosettaOk => ru ? 'доступна' : 'available';
+  String healthCheckFailed(String error) =>
+      ru ? 'не удалось проверить: $error' : 'check failed: $error';
 }
 
 class SB extends InheritedWidget {

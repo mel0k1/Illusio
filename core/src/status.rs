@@ -15,6 +15,8 @@ pub struct ServerStatus {
     pub soft_max_players: i64,
     #[serde(default, rename = "playerCount")]
     pub player_count: i64,
+    #[serde(default, rename = "roundStartTime", alias = "round_start_time")]
+    pub round_start_time: String,
 }
 
 pub fn status_url(server_url: &str) -> String {

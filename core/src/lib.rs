@@ -6,10 +6,13 @@ pub mod config;
 pub mod cull;
 pub mod engine;
 pub mod engines;
+pub mod health;
 pub mod http;
 pub mod hub;
 pub mod install;
+pub mod ipc;
 mod launch;
+pub mod modules;
 pub mod packs;
 pub mod socks;
 pub mod status;
@@ -555,6 +558,8 @@ struct ProxySessionPayload {
 struct VersionPayload {
     #[serde(default)]
     current: String,
+    #[serde(default)]
+    prerelease: bool,
 }
 
 #[no_mangle]
@@ -701,7 +706,7 @@ pub unsafe extern "C" fn illusio_content_state(raw: *const c_char) -> *mut c_cha
 pub unsafe extern "C" fn illusio_update_check(raw: *const c_char) -> *mut c_char {
     guarded(
         || match serde_json::from_str::<VersionPayload>(&read_ptr(raw)) {
-            Ok(payload) => match update::check(&payload.current) {
+            Ok(payload) => match update::check_ex(&payload.current, payload.prerelease) {
                 Ok(value) => serde_json::json!({
                     "ok": true,
                     "available": value.available,
@@ -731,7 +736,7 @@ pub unsafe extern "C" fn illusio_self_update(raw: *const c_char) -> *mut c_char 
     guarded(
         || match serde_json::from_str::<VersionPayload>(&read_ptr(raw)) {
             Ok(payload) => {
-                let release = match update::check(&payload.current) {
+                let release = match update::check_ex(&payload.current, payload.prerelease) {
                     Ok(value) if value.available => value,
                     Ok(_) => {
                         return serde_json::json!({"ok": true, "updated": false}).to_string();
@@ -774,6 +779,67 @@ pub unsafe extern "C" fn illusio_update_finalize() -> *mut c_char {
     guarded(|| match update::finalize_pending() {
         Ok(applied) => serde_json::json!({"ok": true, "applied": applied}).to_string(),
         Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_ipc_init(raw: *const c_char) -> *mut c_char {
+    guarded(|| {
+        let args: Vec<String> = serde_json::from_str(&read_ptr(raw)).unwrap_or_default();
+        match ipc::init(&args) {
+            Ok(primary) => serde_json::json!({"ok": true, "primary": primary}).to_string(),
+            Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_ipc_poll() -> *mut c_char {
+    guarded(|| {
+        serde_json::json!({
+            "ok": true,
+            "url": ipc::poll().unwrap_or_default(),
+        })
+        .to_string()
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_launch_status() -> *mut c_char {
+    guarded(|| {
+        serde_json::json!({
+            "ok": true,
+            "status": launch::status_snapshot(),
+        })
+        .to_string()
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_health() -> *mut c_char {
+    guarded(|| {
+        serde_json::json!({
+            "ok": true,
+            "health": health::report(),
+        })
+        .to_string()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_engine_modules(raw: *const c_char) -> *mut c_char {
+    #[derive(Deserialize)]
+    struct Payload {
+        #[serde(default)]
+        path: String,
+    }
+
+    guarded(|| match serde_json::from_str::<Payload>(&read_ptr(raw)) {
+        Ok(payload) => match modules::read_names(std::path::Path::new(payload.path.trim())) {
+            Ok(names) => serde_json::json!({"ok": true, "modules": names}).to_string(),
+            Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+        },
+        Err(message) => serde_json::json!({"ok": false, "error": message.to_string()}).to_string(),
     })
 }
 
