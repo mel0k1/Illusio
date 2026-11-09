@@ -730,6 +730,19 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
                     icon: Icons.tag,
                     label: '${S.of(context).round} ${server.roundId}',
                   ),
+                if (server.queue > 0)
+                  _InfoChip(
+                    icon: Icons.hourglass_bottom,
+                    label: S.of(context).queueCount(server.queue),
+                  ),
+                if (server.babyJail)
+                  _InfoChip(
+                      icon: Icons.child_care_outlined,
+                      label: S.of(context).babyJail),
+                if (server.panicBunker)
+                  _InfoChip(
+                      icon: Icons.warning_amber_rounded,
+                      label: S.of(context).panicBunker),
                 for (final tag in server.tags)
                   _InfoChip(icon: Icons.label_outline, label: _tagLabel(tag)),
               ],
@@ -851,7 +864,7 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
       return '${s.langPrefix}${raw.substring('lang:'.length)}';
     }
     if (raw.startsWith('rp:')) {
-      return 'RP: ${raw.substring('rp:'.length)}';
+      return ServerTagInfo.rpLabel(raw.substring('rp:'.length), s);
     }
     if (raw.startsWith('higher_perf:') ||
         raw.startsWith('luna') ||
@@ -962,6 +975,40 @@ class _FilterSheetState extends State<_FilterSheet> {
     final controller = widget.controller;
     final available = ServerTagInfo.availableFilters(controller.hubServers);
     final selected = List<String>.from(controller.filterTags);
+    final groups = <String, List<String>>{};
+    for (final filter in available) {
+      groups
+          .putIfAbsent(ServerTagInfo.categoryOf(filter), () => [])
+          .add(filter);
+    }
+    final other = [
+      ...?groups['18+'],
+      ...?groups['wl'],
+      ...groups.entries
+          .where((entry) =>
+              !['rp', 'lang', 'region', '18+', 'wl'].contains(entry.key))
+          .expand((entry) => entry.value),
+    ];
+    final sections = <(String, List<String>)>[
+      if (groups.containsKey('rp')) (s.filterRp, groups['rp']!),
+      if (groups.containsKey('lang')) (s.filterLang, groups['lang']!),
+      if (groups.containsKey('region')) (s.filterRegion, groups['region']!),
+      if (other.isNotEmpty) (s.filterOther, other),
+    ];
+    Widget filterChip(String filter) => FilterChip(
+          selected: selected.contains(filter),
+          label: Text(ServerTagInfo.filterLabel(filter, s)),
+          onSelected: (value) {
+            setState(() {
+              if (value) {
+                selected.add(filter);
+              } else {
+                selected.remove(filter);
+              }
+            });
+            controller.setFilterTags(selected);
+          },
+        );
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
@@ -979,29 +1026,17 @@ class _FilterSheetState extends State<_FilterSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final filter in available)
-                    FilterChip(
-                      selected: selected.contains(filter),
-                      label: Text(
-                          ServerTagInfo.filterLabel(filter, S.of(context))),
-                      onSelected: (value) {
-                        setState(() {
-                          if (value) {
-                            selected.add(filter);
-                          } else {
-                            selected.remove(filter);
-                          }
-                        });
-                        controller.setFilterTags(selected);
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
+              for (final (title, filters) in sections) ...[
+                Text(title, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [for (final filter in filters) filterChip(filter)],
+                ),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(

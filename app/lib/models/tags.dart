@@ -83,7 +83,7 @@ class ServerTagInfo {
       case 'region':
         return '${s.regionPrefix}${value.toUpperCase()}';
       case 'rp':
-        return 'RP: ${rpLabel(value, s)}';
+        return rpLabel(value, s);
       default:
         return filter;
     }
@@ -94,22 +94,33 @@ class ServerTagInfo {
       case 'none':
         return s.rpNone;
       case 'low':
+      case 'lrp':
         return s.rpLow;
+      case 'med':
       case 'medium':
         return s.rpMedium;
       case 'high':
+      case 'hrp':
         return s.rpHigh;
       default:
         return value.toUpperCase();
     }
   }
 
+  static const List<String> fixedRpFilters = [
+    'rp:none',
+    'rp:low',
+    'rp:medium',
+    'rp:high',
+  ];
+
+  static const List<String> fixedLangFilters = ['lang:ru', 'lang:en'];
+
   static List<String> availableFilters(List<HubServer> servers) {
-    final languages = <String>{};
+    final languages = <String>{...fixedLangFilters};
     final regions = <String>{};
-    final rpLevels = <String>{};
-    var adult = false;
-    var whitelist = false;
+    final rpLevels = <String>{...fixedRpFilters};
+    final extras = <String>{};
     for (final server in servers) {
       for (final tag in infer(server)) {
         final category = categoryOf(tag);
@@ -120,20 +131,23 @@ class ServerTagInfo {
             regions.add(tag);
           case 'rp':
             rpLevels.add(tag);
-          case '18+':
-            adult = true;
-          case 'wl':
-            whitelist = true;
+          default:
+            if (category.isNotEmpty) {
+              extras.add(tag);
+            }
         }
       }
     }
     List<String> sorted(Set<String> values) => values.toList()..sort();
+    final extraRp =
+        rpLevels.where((value) => !fixedRpFilters.contains(value)).toList()
+          ..sort();
     return [
-      if (adult) '18+',
-      if (whitelist) 'wl',
       ...sorted(languages),
       ...sorted(regions),
-      ...sorted(rpLevels),
+      ...fixedRpFilters,
+      ...extraRp,
+      ...sorted(extras),
     ];
   }
 }

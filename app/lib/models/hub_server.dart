@@ -13,6 +13,9 @@ class HubServer {
     required this.roundId,
     required this.statusMessage,
     this.roundStartTime = '',
+    this.panicBunker = false,
+    this.babyJail = false,
+    this.queue = 0,
     this.hub = '',
   });
 
@@ -27,6 +30,9 @@ class HubServer {
   final int roundId;
   final String statusMessage;
   final String roundStartTime;
+  final bool panicBunker;
+  final bool babyJail;
+  final int queue;
   final String hub;
 
   static String _string(Object? value) => value?.toString() ?? '';
@@ -68,6 +74,9 @@ class HubServer {
       roundId: _int(raw['round_id']),
       statusMessage: _string(raw['status_message']),
       roundStartTime: _string(raw['round_start_time']),
+      panicBunker: raw['panic_bunker'] == true,
+      babyJail: raw['baby_jail'] == true,
+      queue: _int(raw['queue']),
       hub: _string(raw['hub']),
     );
   }

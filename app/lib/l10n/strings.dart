@@ -113,10 +113,17 @@ class S {
   String get langPrefix => ru ? 'Язык: ' : 'Language: ';
   String get regionPrefix => ru ? 'Регион: ' : 'Region: ';
   String get whitelist => ru ? 'Вайтлист' : 'Whitelist';
-  String get rpNone => ru ? 'нет' : 'none';
-  String get rpLow => ru ? 'лёгкий' : 'light';
-  String get rpMedium => ru ? 'средний' : 'medium';
-  String get rpHigh => ru ? 'тяжёлый' : 'heavy';
+  String get rpNone => ru ? 'Без RP' : 'No RP';
+  String get rpLow => ru ? 'ЛРП' : 'LRP';
+  String get rpMedium => ru ? 'МРП' : 'MRP';
+  String get rpHigh => ru ? 'ХРП' : 'HRP';
+  String get filterRp => ru ? 'Уровень RP' : 'RP level';
+  String get filterLang => ru ? 'Язык' : 'Language';
+  String get filterRegion => ru ? 'Регион' : 'Region';
+  String get filterOther => ru ? 'Прочее' : 'Other';
+  String get babyJail => ru ? 'Baby Jail' : 'Baby Jail';
+  String get panicBunker => ru ? 'Panic Bunker' : 'Panic Bunker';
+  String queueCount(int count) => ru ? 'Очередь: $count' : 'Queue: $count';
   String detailsFailed(String error) => ru
       ? 'Не удалось получить описание: $error'
       : 'Failed to load description: $error';
