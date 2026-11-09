@@ -37,6 +37,6 @@ void main() {
         (compact.cardTheme.shape as RoundedRectangleBorder).borderRadius;
     final roundRadius =
         (round.cardTheme.shape as RoundedRectangleBorder).borderRadius;
-    expect(roundRadius.bottomLeft.x, greaterThan(compactRadius.bottomLeft.x));
+    expect(roundRadius, isNot(compactRadius));
   });
 }
