@@ -86,11 +86,7 @@ struct HubEntry {
     address: String,
     #[serde(default, rename = "statusData", deserialize_with = "null_to_default")]
     status_data: HubStatusData,
-    #[serde(
-        default,
-        rename = "inferredTags",
-        deserialize_with = "null_to_default"
-    )]
+    #[serde(default, rename = "inferredTags", deserialize_with = "null_to_default")]
     inferred_tags: Vec<String>,
 }
 
@@ -100,7 +96,11 @@ struct HubStatusData {
     name: String,
     #[serde(default, deserialize_with = "null_to_default")]
     players: i64,
-    #[serde(default, deserialize_with = "null_to_default", rename = "soft_max_players")]
+    #[serde(
+        default,
+        deserialize_with = "null_to_default",
+        rename = "soft_max_players"
+    )]
     soft_max_players: i64,
     #[serde(default, deserialize_with = "null_to_default")]
     tags: Vec<String>,
@@ -112,7 +112,11 @@ struct HubStatusData {
     run_level: i64,
     #[serde(default, deserialize_with = "null_to_default", rename = "round_id")]
     round_id: i64,
-    #[serde(default, deserialize_with = "null_to_default", rename = "statusMessage")]
+    #[serde(
+        default,
+        deserialize_with = "null_to_default",
+        rename = "statusMessage"
+    )]
     status_message: String,
     #[serde(
         default,

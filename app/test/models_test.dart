@@ -124,7 +124,9 @@ void main() {
     expect(ServerTagInfo.categoryOf('wl'), 'wl');
     final s = const S('ru');
     expect(ServerTagInfo.filterLabel('lang:ru', s), 'Язык: RU');
-    expect(ServerTagInfo.filterLabel('rp:low', s), 'RP: лёгкий');
+    expect(ServerTagInfo.filterLabel('rp:low', s), 'ЛРП');
+    expect(ServerTagInfo.filterLabel('rp:med', s), 'МРП');
+    expect(ServerTagInfo.filterLabel('rp:high', const S('en')), 'HRP');
     expect(ServerTagInfo.filterLabel('wl', s), 'Вайтлист');
     expect(ServerTagInfo.filterLabel('wl', const S('en')), 'Whitelist');
     expect(const S('en').playersOf(5, 0), '5 players');
