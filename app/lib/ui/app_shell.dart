@@ -26,9 +26,7 @@ class DockItem {
 
 final List<DockItem> dockItems = [
   DockItem(
-      icon: Icons.star_outline,
-      selectedIcon: Icons.star,
-      label: (s) => s.home),
+      icon: Icons.star_outline, selectedIcon: Icons.star, label: (s) => s.home),
   DockItem(
     icon: Icons.travel_explore_outlined,
     selectedIcon: Icons.travel_explore,
@@ -291,8 +289,10 @@ class _PageStack extends StatelessWidget {
               enabled: i == index,
               child: AnimatedSlide(
                 duration: spatialDefault,
-                curve: expressCurve,
-                offset: i == index ? Offset.zero : const Offset(0, 0.015),
+                curve: i == index ? expressCurve : exitCurve,
+                offset: i == index
+                    ? Offset.zero
+                    : Offset(i < index ? -0.025 : 0.025, 0.01),
                 child: AnimatedOpacity(
                   duration: spatialFast,
                   curve: expressCurve,
@@ -380,57 +380,69 @@ class _DockButton extends StatelessWidget {
         selected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Material(
-        color: selected ? scheme.primaryContainer : Colors.transparent,
-        borderRadius: BorderRadius.circular(24),
-        child: InkWell(
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          onTap: onTap,
-          child: AnimatedSwitcher(
-            duration: spatialFast,
-            switchInCurve: expressCurve,
-            switchOutCurve: expressCurve,
-            transitionBuilder: (child, animation) => ScaleTransition(
-              scale: animation,
-              child: FadeTransition(opacity: animation, child: child),
+      child: AnimatedContainer(
+        duration: spatialDefault,
+        curve: springCurve,
+        decoration: BoxDecoration(
+          color: selected ? scheme.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
             ),
-            child: selected
-                ? Row(
-                    key: const ValueKey(true),
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedRotation(
-                        turns: 0.125,
-                        duration: spatialDefault,
-                        curve: springCurve,
-                        child: Icon(
-                          item.selectedIcon,
-                          size: 22,
-                          color: foreground,
-                        ),
+            onTap: onTap,
+            child: AnimatedScale(
+              scale: selected ? 1.0 : 0.96,
+              duration: spatialDefault,
+              curve: springCurve,
+              child: AnimatedSwitcher(
+                duration: spatialFast,
+                switchInCurve: expressCurve,
+                switchOutCurve: exitCurve,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: selected
+                    ? Row(
+                        key: const ValueKey(true),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          AnimatedRotation(
+                            turns: 0.125,
+                            duration: spatialDefault,
+                            curve: springCurve,
+                            child: Icon(
+                              item.selectedIcon,
+                              size: 22,
+                              color: foreground,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              label,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelLarge
+                                  ?.copyWith(color: foreground),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Icon(
+                        item.icon,
+                        key: const ValueKey(false),
+                        size: 24,
+                        color: foreground,
                       ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          label,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelLarge
-                              ?.copyWith(color: foreground),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ],
-                  )
-                : Icon(
-                    item.icon,
-                    key: const ValueKey(false),
-                    size: 24,
-                    color: foreground,
-                  ),
+              ),
+            ),
           ),
         ),
       ),

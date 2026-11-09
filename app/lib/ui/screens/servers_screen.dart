@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/press_scale.dart';
+
 import '../../l10n/strings.dart';
 import '../../models/hub_server.dart';
 import '../../models/server.dart';
@@ -138,7 +140,10 @@ class _ServersScreenState extends State<ServersScreen> {
                             const SizedBox(height: 4),
                             Text(
                               controller.hubError.isEmpty
-                                  ? s.serversCount(servers.length, controller.hubServers.length, totalPlayers)
+                                  ? s.serversCount(
+                                      servers.length,
+                                      controller.hubServers.length,
+                                      totalPlayers)
                                   : s.listNotUpdated,
                               style: Theme.of(context)
                                   .textTheme
@@ -281,101 +286,103 @@ class _ServerTile extends StatelessWidget {
     final favorite = controller.isFavorite(server.address);
     final connecting = controller.connecting &&
         controller.selectedServer?.url == server.address;
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: connecting ? scheme.primary : scheme.outlineVariant,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+    return PressScale(
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(20),
-          onTap: onOpen,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-            child: Row(
-              children: [
-                _Monogram(server: server),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        server.name.isEmpty ? server.address : server.name,
-                        style: theme.textTheme.titleMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              server.preset.isEmpty
-                                  ? server.address
-                                  : server.preset,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (server.map.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.map_outlined,
-                                size: 13, color: scheme.onSurfaceVariant),
-                            const SizedBox(width: 4),
+          border: Border.all(
+            color: connecting ? scheme.primary : scheme.outlineVariant,
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: onOpen,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              child: Row(
+                children: [
+                  _Monogram(server: server),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          server.name.isEmpty ? server.address : server.name,
+                          style: theme.textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
                             Flexible(
                               child: Text(
-                                server.map,
+                                server.preset.isEmpty
+                                    ? server.address
+                                    : server.preset,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: scheme.onSurfaceVariant,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            if (server.map.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.map_outlined,
+                                  size: 13, color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  server.map,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _PingDot(ping: controller.pings[server.address]),
-                const SizedBox(width: 4),
-                _PlayersBadge(server: server),
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: () => controller.toggleFavorite(
-                    server.name.isEmpty ? server.address : server.name,
-                    server.address,
-                  ),
-                  icon: Icon(
-                    favorite ? Icons.star : Icons.star_outline,
-                    size: 20,
-                  ),
-                  color: favorite ? scheme.primary : scheme.onSurfaceVariant,
-                  tooltip: favorite
-                      ? S.of(context).removeFavorite
-                      : S.of(context).addFavorite,
-                ),
-                connecting
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 14),
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                      )
-                    : FilledButton.tonal(
-                        onPressed: onConnect,
-                        child: Text(S.of(context).play),
-                      ),
-              ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _PingDot(ping: controller.pings[server.address]),
+                  const SizedBox(width: 4),
+                  _PlayersBadge(server: server),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: () => controller.toggleFavorite(
+                      server.name.isEmpty ? server.address : server.name,
+                      server.address,
+                    ),
+                    icon: Icon(
+                      favorite ? Icons.star : Icons.star_outline,
+                      size: 20,
+                    ),
+                    color: favorite ? scheme.primary : scheme.onSurfaceVariant,
+                    tooltip: favorite
+                        ? S.of(context).removeFavorite
+                        : S.of(context).addFavorite,
+                  ),
+                  connecting
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 14),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : FilledButton.tonal(
+                          onPressed: onConnect,
+                          child: Text(S.of(context).play),
+                        ),
+                ],
+              ),
             ),
           ),
         ),
@@ -563,7 +570,8 @@ class _ServerDetailsSheetState extends State<_ServerDetailsSheet> {
       if (result['ok'] == true) {
         _status = ServerStatusInfo.fromMap(result['status']);
       } else {
-        _error = result['error']?.toString() ?? S.of(context).serverNotResponding;
+        _error =
+            result['error']?.toString() ?? S.of(context).serverNotResponding;
       }
     });
   }
@@ -908,7 +916,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                   for (final filter in available)
                     FilterChip(
                       selected: selected.contains(filter),
-                      label: Text(ServerTagInfo.filterLabel(filter, S.of(context))),
+                      label: Text(
+                          ServerTagInfo.filterLabel(filter, S.of(context))),
                       onSelected: (value) {
                         setState(() {
                           if (value) {
@@ -929,7 +938,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                     child: TextField(
                       controller: _min,
                       keyboardType: TextInputType.number,
-                      decoration: illusioInput(S.of(context).playersFrom, hint: '0'),
+                      decoration:
+                          illusioInput(S.of(context).playersFrom, hint: '0'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -937,7 +947,8 @@ class _FilterSheetState extends State<_FilterSheet> {
                     child: TextField(
                       controller: _max,
                       keyboardType: TextInputType.number,
-                      decoration: illusioInput(S.of(context).playersTo, hint: '∞'),
+                      decoration:
+                          illusioInput(S.of(context).playersTo, hint: '∞'),
                     ),
                   ),
                 ],

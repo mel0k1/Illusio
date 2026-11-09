@@ -88,7 +88,9 @@ const Duration spatialFast = Duration(milliseconds: 280);
 const Duration spatialDefault = Duration(milliseconds: 380);
 const Duration effectsFast = Duration(milliseconds: 160);
 const Curve springCurve = Curves.easeOutBack;
-const Curve expressCurve = Curves.easeOutCubic;
+const Curve expressCurve = Easing.emphasizedDecelerate;
+const Curve settleCurve = Easing.standard;
+const Curve exitCurve = Easing.emphasizedAccelerate;
 
 class IllusioPreset {
   const IllusioPreset(
@@ -107,12 +109,18 @@ class IllusioPreset {
 }
 
 const List<IllusioPreset> illusioPresets = [
-  IllusioPreset('dark', signalAmber, Color(0xFF3A2E00), Color(0xFF5C4800), Color(0xFFFFE08D)),
-  IllusioPreset('darkRed', Color(0xFFFFB4A0), Color(0xFF5B1500), Color(0xFF7C2C00), Color(0xFFFFDBCF)),
-  IllusioPreset('darkPurple', Color(0xFFD0B4FF), Color(0xFF381E72), Color(0xFF4F378B), Color(0xFFEADDFF)),
-  IllusioPreset('midnightBlue', Color(0xFFAAC7FF), Color(0xFF002F67), Color(0xFF00458F), Color(0xFFD6E3FF)),
-  IllusioPreset('emeraldDusk', calmGreen, Color(0xFF00390F), Color(0xFF1F5123), Color(0xFFB4F1B5)),
-  IllusioPreset('copperNight', Color(0xFFFFB77E), Color(0xFF4A2800), Color(0xFF6B3D0D), Color(0xFFFFDCC2)),
+  IllusioPreset('dark', signalAmber, Color(0xFF3A2E00), Color(0xFF5C4800),
+      Color(0xFFFFE08D)),
+  IllusioPreset('darkRed', Color(0xFFFFB4A0), Color(0xFF5B1500),
+      Color(0xFF7C2C00), Color(0xFFFFDBCF)),
+  IllusioPreset('darkPurple', Color(0xFFD0B4FF), Color(0xFF381E72),
+      Color(0xFF4F378B), Color(0xFFEADDFF)),
+  IllusioPreset('midnightBlue', Color(0xFFAAC7FF), Color(0xFF002F67),
+      Color(0xFF00458F), Color(0xFFD6E3FF)),
+  IllusioPreset('emeraldDusk', calmGreen, Color(0xFF00390F), Color(0xFF1F5123),
+      Color(0xFFB4F1B5)),
+  IllusioPreset('copperNight', Color(0xFFFFB77E), Color(0xFF4A2800),
+      Color(0xFF6B3D0D), Color(0xFFFFDCC2)),
 ];
 
 ColorScheme _applyPreset(ColorScheme scheme, String preset) {
@@ -132,9 +140,8 @@ ColorScheme _applyPreset(ColorScheme scheme, String preset) {
 
 ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
   final base = brightness == Brightness.dark ? darkScheme : lightScheme;
-  final scheme = brightness == Brightness.dark
-      ? _applyPreset(base, preset)
-      : base;
+  final scheme =
+      brightness == Brightness.dark ? _applyPreset(base, preset) : base;
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -248,6 +255,21 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
         }
         return scheme.outline;
       }),
+      trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return Colors.transparent;
+        }
+        return scheme.outlineVariant;
+      }),
+      thumbIcon: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return Icon(Icons.check, size: 14, color: scheme.onPrimary);
+        }
+        return null;
+      }),
+      overlayColor: WidgetStatePropertyAll(
+        scheme.primary.withValues(alpha: 0.08),
+      ),
     ),
     chipTheme: theme.chipTheme.copyWith(
       backgroundColor: scheme.surfaceContainerHigh,
@@ -295,6 +317,9 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
       color: scheme.primary,
       linearTrackColor: scheme.surfaceContainerHighest,
       circularTrackColor: scheme.surfaceContainerHighest,
+      strokeCap: StrokeCap.round,
+      stopIndicatorColor: scheme.primary,
+      stopIndicatorRadius: 4,
     ),
     listTileTheme: ListTileThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -306,6 +331,29 @@ ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
         borderRadius: BorderRadius.circular(10),
       ),
       textStyle: body.labelMedium?.copyWith(color: scheme.onInverseSurface),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: scheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      textStyle: body.bodyMedium,
+      elevation: 6,
+    ),
+    dropdownMenuTheme: DropdownMenuThemeData(
+      menuStyle: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
+        shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        )),
+      ),
+    ),
+    expansionTileTheme: ExpansionTileThemeData(
+      shape: const Border(),
+      collapsedShape: const Border(),
+      backgroundColor: scheme.surfaceContainerLow,
+      collapsedBackgroundColor: scheme.surfaceContainerLow,
+      iconColor: scheme.primary,
+      collapsedIconColor: scheme.onSurfaceVariant,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
     ),
   );
 }

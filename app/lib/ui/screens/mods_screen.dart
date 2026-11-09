@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/press_scale.dart';
+
 import '../../l10n/strings.dart';
 import '../../models/hub_server.dart';
 import '../../state/app_controller.dart';
@@ -44,8 +46,7 @@ class _ModsScreenState extends State<ModsScreen> {
             .toList();
         final gameDlls = controller.mods.where((mod) => mod.isGameMod).toList();
         final packs = controller.resPacks;
-        final enabled =
-            controller.modsEnabled.length +
+        final enabled = controller.modsEnabled.length +
             controller.dllModsEnabled.length +
             controller.subverterEnabled.length +
             controller.resPacksEnabled.length;
@@ -330,9 +331,9 @@ class _KindLabel extends StatelessWidget {
     return Text(
       text,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: Theme.of(context).colorScheme.primary,
-        letterSpacing: 0.4,
-      ),
+            color: Theme.of(context).colorScheme.primary,
+            letterSpacing: 0.4,
+          ),
     );
   }
 }
@@ -358,61 +359,63 @@ class _ModTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-      decoration: BoxDecoration(
-        color: enabled
-            ? scheme.secondaryContainer.withValues(alpha: 0.45)
-            : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: enabled ? scheme.secondary : scheme.outlineVariant,
+    return PressScale(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        decoration: BoxDecoration(
+          color: enabled
+              ? scheme.secondaryContainer.withValues(alpha: 0.45)
+              : scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: enabled ? scheme.secondary : scheme.outlineVariant,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: enabled
-                  ? scheme.secondaryContainer
-                  : scheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: enabled
+                    ? scheme.secondaryContainer
+                    : scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                mod.isGameMod
+                    ? Icons.sports_esports_outlined
+                    : mod.isDll
+                        ? Icons.memory_outlined
+                        : Icons.inventory_2_outlined,
+                size: 20,
+                color: enabled
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant,
+              ),
             ),
-            child: Icon(
-              mod.isGameMod
-                  ? Icons.sports_esports_outlined
-                  : mod.isDll
-                  ? Icons.memory_outlined
-                  : Icons.inventory_2_outlined,
-              size: 20,
-              color: enabled
-                  ? scheme.onSecondaryContainer
-                  : scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Switch(value: enabled, onChanged: (_) => onToggle()),
-        ],
+            Switch(value: enabled, onChanged: (_) => onToggle()),
+          ],
+        ),
       ),
     );
   }
@@ -441,71 +444,75 @@ class _ResPackTile extends StatelessWidget {
       if (!pack.valid) s.resPackInvalid,
       enabled ? s.modEnabled : s.modDisabled,
     ].join(' · ');
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-      decoration: BoxDecoration(
-        color: enabled
-            ? scheme.tertiaryContainer.withValues(alpha: 0.45)
-            : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: enabled ? scheme.tertiary : scheme.outlineVariant,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: enabled
-                  ? scheme.tertiaryContainer
-                  : scheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(
-              pack.valid
-                  ? Icons.texture_outlined
-                  : Icons.warning_amber_outlined,
-              size: 20,
-              color: enabled
-                  ? scheme.onTertiaryContainer
-                  : scheme.onSurfaceVariant,
-            ),
+    return PressScale(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        decoration: BoxDecoration(
+          color: enabled
+              ? scheme.tertiaryContainer.withValues(alpha: 0.45)
+              : scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: enabled ? scheme.tertiary : scheme.outlineVariant,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  pack.valid && pack.name.isNotEmpty ? pack.name : pack.dirName,
-                  style: theme.textTheme.titleMedium,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (pack.description.isNotEmpty)
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: enabled
+                    ? scheme.tertiaryContainer
+                    : scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                pack.valid
+                    ? Icons.texture_outlined
+                    : Icons.warning_amber_outlined,
+                size: 20,
+                color: enabled
+                    ? scheme.onTertiaryContainer
+                    : scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    pack.description,
+                    pack.valid && pack.name.isNotEmpty
+                        ? pack.name
+                        : pack.dirName,
+                    style: theme.textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (pack.description.isNotEmpty)
+                    Text(
+                      pack.description,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  Text(
+                    subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Switch(
-            value: enabled,
-            onChanged: pack.valid ? (_) => onToggle() : null,
-          ),
-        ],
+            Switch(
+              value: enabled,
+              onChanged: pack.valid ? (_) => onToggle() : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -529,9 +536,8 @@ class _DumperCard extends StatelessWidget {
             : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: controller.dumpResources
-              ? scheme.error
-              : scheme.outlineVariant,
+          color:
+              controller.dumpResources ? scheme.error : scheme.outlineVariant,
         ),
       ),
       child: Row(

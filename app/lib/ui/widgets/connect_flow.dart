@@ -214,10 +214,20 @@ class _DownloadBody extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2.4),
               )
             else
-              Icon(
-                failed ? Icons.error_outline : Icons.check_circle_outline,
-                size: 20,
-                color: failed ? scheme.error : scheme.secondary,
+              AnimatedSwitcher(
+                duration: spatialFast,
+                switchInCurve: expressCurve,
+                switchOutCurve: exitCurve,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  key: ValueKey(failed),
+                  failed ? Icons.error_outline : Icons.check_circle_outline,
+                  size: 20,
+                  color: failed ? scheme.error : scheme.secondary,
+                ),
               ),
             const SizedBox(width: 12),
             Expanded(
@@ -237,11 +247,16 @@ class _DownloadBody extends StatelessWidget {
         ),
         if (showBar) ...[
           const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: state.progress,
+          TweenAnimationBuilder<double>(
+            tween: Tween(
+              end: (state.progress ?? 0).clamp(0.0, 1.0).toDouble(),
+            ),
+            duration: spatialDefault,
+            curve: expressCurve,
+            builder: (context, value, _) => LinearProgressIndicator(
+              value: value,
               minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
               backgroundColor: scheme.surfaceContainerHighest,
             ),
           ),
@@ -289,11 +304,16 @@ class DownloadInline extends StatelessWidget {
           ),
           if (showBar) ...[
             const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: state.progress,
+            TweenAnimationBuilder<double>(
+              tween: Tween(
+                end: (state.progress ?? 0).clamp(0.0, 1.0).toDouble(),
+              ),
+              duration: spatialDefault,
+              curve: expressCurve,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
                 minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
                 backgroundColor: scheme.surfaceContainerHighest,
               ),
             ),

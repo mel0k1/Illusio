@@ -1,6 +1,8 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/press_scale.dart';
+
 import '../../l10n/strings.dart';
 import '../../models/server.dart';
 import '../../state/app_controller.dart';
@@ -375,73 +377,75 @@ class _FavoriteTile extends StatelessWidget {
     final scheme = theme.colorScheme;
     final connecting =
         controller.connecting && controller.selectedServer?.url == server.url;
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _Monogram(server: server),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      server.name,
-                      style: theme.textTheme.titleMedium,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      server.url,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+    return PressScale(
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                _Monogram(server: server),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        server.name,
+                        style: theme.textTheme.titleMedium,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                      Text(
+                        server.url,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                onPressed: () => controller.raiseFavorite(server.url),
-                icon: const Icon(Icons.vertical_align_top, size: 20),
-                color: scheme.onSurfaceVariant,
-                tooltip: S.of(context).raiseTop,
-              ),
-              IconButton(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, size: 20),
-                color: scheme.onSurfaceVariant,
-                tooltip: S.of(context).edit,
-              ),
-              IconButton(
-                onPressed: () => controller.removeFavorite(server.url),
-                icon: const Icon(Icons.star, size: 20),
-                color: scheme.primary,
-                tooltip: S.of(context).removeFavorite,
-              ),
-              connecting
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                IconButton(
+                  onPressed: () => controller.raiseFavorite(server.url),
+                  icon: const Icon(Icons.vertical_align_top, size: 20),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: S.of(context).raiseTop,
+                ),
+                IconButton(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: S.of(context).edit,
+                ),
+                IconButton(
+                  onPressed: () => controller.removeFavorite(server.url),
+                  icon: const Icon(Icons.star, size: 20),
+                  color: scheme.primary,
+                  tooltip: S.of(context).removeFavorite,
+                ),
+                connecting
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: onConnect,
+                        child: Text(S.of(context).play),
                       ),
-                    )
-                  : FilledButton.tonal(
-                      onPressed: onConnect,
-                      child: Text(S.of(context).play),
-                    ),
-            ],
-          ),
-          if (connecting) DownloadInline(state: controller.downloadState),
-        ],
+              ],
+            ),
+            if (connecting) DownloadInline(state: controller.downloadState),
+          ],
+        ),
       ),
     );
   }
