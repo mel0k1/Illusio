@@ -310,9 +310,10 @@ class _DirectConnectCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                FilledButton(
+                FilledButton.icon(
                   onPressed: value.text.trim().isEmpty ? null : onConnect,
-                  child: Text(S.of(context).play),
+                  icon: const Icon(Icons.rocket_launch_outlined, size: 18),
+                  label: Text(S.of(context).play),
                 ),
               ],
             ),
