@@ -336,10 +336,6 @@ class S {
       : 'keep favorite server builds up to date in background';
 
   String get safetySection => ru ? 'Безопасность' : 'Safety';
-  String get patchHwidLabel => ru ? 'Подменять HWID' : 'Spoof HWID';
-  String get patchHwidHint => ru
-      ? 'случайный идентификатор железа при каждом запуске клиента'
-      : 'random hardware id on every client launch';
   String get patchRpcLabel =>
       ru ? 'Отключить Discord RPC' : 'Disable Discord RPC';
   String get patchRpcHint => ru
@@ -354,6 +350,65 @@ class S {
   String get patchBlackholeHint => ru
       ? 'сервер не может выполнять произвольные консольные команды, чат разрешён'
       : 'the server cannot run arbitrary console commands, chat stays allowed';
+  String get hideLevelLabel =>
+      ru ? 'Скрытие патчей (Stealth)' : 'Patch stealth';
+  String get hideLevelHint => ru
+      ? 'скрывает загрузчик, Harmony и моды от рефлексии игры; чем выше уровень, тем глубже скрытие'
+      : 'hides the loader, Harmony and mods from game reflection; higher levels hide deeper';
+  String hideLevelName(int level) {
+    if (ru) {
+      return switch (level) {
+        0 => 'Выключено',
+        1 => 'Дуплицит — скрыт только загрузчик',
+        2 => 'Обычный',
+        3 => 'Усиленный',
+        _ => 'Максимальный',
+      };
+    }
+    return switch (level) {
+      0 => 'Disabled',
+      1 => 'Duplicit — loader only',
+      2 => 'Normal',
+      3 => 'Explicit',
+      _ => 'Unconditional',
+    };
+  }
+
+  String get hwidModeLabel => ru ? 'HWID' : 'HWID';
+  String get hwidModeHint => ru
+      ? 'что отправлять серверу вместо реального идентификатора железа'
+      : 'what to send to servers instead of the real hardware id';
+  String hwidModeName(String mode) {
+    if (ru) {
+      return switch (mode) {
+        'random' => 'Случайный при каждом запуске',
+        'fixed' => 'Фиксированный',
+        'account' => 'Свой для каждого аккаунта',
+        _ => 'Выключено',
+      };
+    }
+    return switch (mode) {
+      'random' => 'Random on every launch',
+      'fixed' => 'Fixed value',
+      'account' => 'Bound to each account',
+      _ => 'Disabled',
+    };
+  }
+
+  String get hwidValueLabel => ru ? 'Значение HWID (hex)' : 'HWID value (hex)';
+  String get hwidValueHint =>
+      ru ? 'цифры 0-9 и буквы a-f, пусто — случайный' : 'digits 0-9 and a-f, empty means random';
+  String get hwidInvalid => ru ? 'некорректный hex' : 'invalid hex';
+  String get hwidGenerate => ru ? 'Сгенерировать' : 'Generate';
+  String get hwidOptoutLabel =>
+      ru ? 'Отключить HWID2' : 'Disable HWID2';
+  String get hwidOptoutHint => ru
+      ? 'сообщить серверу, что второй идентификатор железа не используется'
+      : 'tell the server the second hardware id is not in use';
+  String get pgoLabel => ru ? 'Dynamic PGO' : 'Dynamic PGO';
+  String get pgoHint => ru
+      ? 'динамическая компиляция .NET: заметный прирост FPS без минусов'
+      : 'dynamic .NET compilation: a noticeable FPS boost with no downsides';
 
   String get modsTitle => mods;
   String get modsSubtitle => ru
@@ -458,13 +513,6 @@ class S {
       ru ? 'Сессия до $time' : 'Session until $time';
   String accountSwitched(String name) =>
       ru ? 'Аккаунт: $name' : 'Account: $name';
-
-  String get blockedTitle => ru
-      ? 'Illusio больше не может запускать игру'
-      : 'Illusio can no longer run the game';
-  String get openReleases =>
-      ru ? 'Открыть страницу релизов' : 'Open releases page';
-  String get outdatedVersion => ru ? 'версия устарела' : 'version outdated';
 
   String get phaseServerData =>
       ru ? 'Получаем данные сервера' : 'Fetching server data';

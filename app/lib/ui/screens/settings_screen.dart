@@ -26,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _guest = TextEditingController();
   final TextEditingController _override = TextEditingController();
   final TextEditingController _engineOverride = TextEditingController();
+  final TextEditingController _hwid = TextEditingController();
   bool _proxyBusy = false;
   String _proxyResult = '';
   Color _proxyResultColor = Colors.transparent;
@@ -50,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _guest.text = controller.guestUsername;
       _override.text = controller.usernameOverride;
       _engineOverride.text = controller.engineOverride;
+      _hwid.text = controller.hwidValue;
     });
     final path = await controller.configDirPath();
     if (!mounted) {
@@ -68,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _guest.dispose();
     _override.dispose();
     _engineOverride.dispose();
+    _hwid.dispose();
     super.dispose();
   }
 
@@ -821,13 +824,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 children: [
                   _SwitchRow(
-                    title: s.patchHwidLabel,
-                    subtitle: s.patchHwidHint,
-                    value: controller.patchHwid,
-                    onChanged: controller.setPatchHwid,
-                  ),
-                  const SizedBox(height: 8),
-                  _SwitchRow(
                     title: s.patchRpcLabel,
                     subtitle: s.patchRpcHint,
                     value: controller.patchRpc,
@@ -846,6 +842,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: s.patchBlackholeHint,
                     value: controller.patchBlackhole,
                     onChanged: controller.setPatchBlackhole,
+                  ),
+                  const SizedBox(height: 14),
+                  Text(s.hideLevelLabel, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.hideLevelHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: controller.hideLevel.clamp(0, 4),
+                        isExpanded: true,
+                        items: [
+                          for (var level = 0; level <= 4; level++)
+                            DropdownMenuItem(
+                              value: level,
+                              child: Text(s.hideLevelName(level)),
+                            ),
+                        ],
+                        onChanged: (value) => controller.setHideLevel(value ?? 2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(s.hwidModeLabel, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.hwidModeHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: const ['off', 'random', 'fixed', 'account']
+                                .contains(controller.hwidMode)
+                            ? controller.hwidMode
+                            : 'off',
+                        isExpanded: true,
+                        items: [
+                          for (final mode in ['off', 'random', 'fixed', 'account'])
+                            DropdownMenuItem(
+                              value: mode,
+                              child: Text(s.hwidModeName(mode)),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          controller.setHwidMode(value ?? 'off');
+                          setState(() => _hwid.text = controller.hwidValue);
+                        },
+                      ),
+                    ),
+                  ),
+                  if (controller.hwidMode == 'fixed') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _hwid,
+                      decoration: illusioInput(
+                        s.hwidValueLabel,
+                        hint: s.hwidValueHint,
+                      ).copyWith(
+                        errorText: controller.hwidValueValid
+                            ? null
+                            : s.hwidInvalid,
+                        suffixIcon: IconButton(
+                          tooltip: s.hwidGenerate,
+                          onPressed: () {
+                            controller.setHwidValue(
+                              widget.controller.generateHwid(),
+                            );
+                            setState(
+                              () => _hwid.text = controller.hwidValue,
+                            );
+                          },
+                          icon: const Icon(Icons.casino_outlined, size: 20),
+                        ),
+                      ),
+                      onChanged: (value) => controller.setHwidValue(value),
+                    ),
+                  ],
+                  if (controller.hwidMode != 'off') ...[
+                    const SizedBox(height: 8),
+                    _SwitchRow(
+                      title: s.hwidOptoutLabel,
+                      subtitle: s.hwidOptoutHint,
+                      value: controller.hwidOptout,
+                      onChanged: controller.setHwidOptout,
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.pgoLabel,
+                    subtitle: s.pgoHint,
+                    value: controller.dynamicPgo,
+                    onChanged: controller.setDynamicPgo,
                   ),
                 ],
               ),

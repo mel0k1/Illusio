@@ -132,6 +132,24 @@ pub struct Config {
     pub patch_jam_dials: bool,
     #[serde(default)]
     pub patch_blackhole: bool,
+    #[serde(default = "default_hide_level")]
+    pub hide_level: i64,
+    #[serde(default)]
+    pub hwid_mode: String,
+    #[serde(default)]
+    pub hwid_value: String,
+    #[serde(default)]
+    pub hwid_optout: bool,
+    #[serde(default = "default_true")]
+    pub dynamic_pgo: bool,
+}
+
+fn default_hide_level() -> i64 {
+    2
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_blob_keep_days() -> i64 {

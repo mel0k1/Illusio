@@ -5,6 +5,7 @@ class LoginInfo {
     required this.userId,
     required this.expireTime,
     required this.authServer,
+    this.hwid = '',
   });
 
   final String token;
@@ -12,6 +13,7 @@ class LoginInfo {
   final String userId;
   final String expireTime;
   final String authServer;
+  final String hwid;
 
   static LoginInfo? fromMap(Object? raw) {
     if (raw is! Map) {
@@ -27,6 +29,7 @@ class LoginInfo {
       userId: raw['userId']?.toString() ?? '',
       expireTime: raw['expireTime']?.toString() ?? '',
       authServer: raw['authServer']?.toString() ?? '',
+      hwid: raw['hwid']?.toString() ?? '',
     );
   }
 
@@ -36,5 +39,6 @@ class LoginInfo {
         'userId': userId,
         'expireTime': expireTime,
         'authServer': authServer,
+        'hwid': hwid,
       };
 }

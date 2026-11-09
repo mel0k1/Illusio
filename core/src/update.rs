@@ -5,7 +5,38 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use crate::remote;
+fn version_parts(value: &str) -> Vec<u64> {
+    value
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| {
+            part.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+pub fn version_is_below(current: &str, minimum: &str) -> bool {
+    let minimum = minimum.trim();
+    if minimum.is_empty() {
+        return false;
+    }
+    let left = version_parts(current);
+    let right = version_parts(minimum);
+    let width = left.len().max(right.len());
+    for index in 0..width {
+        let a = left.get(index).copied().unwrap_or(0);
+        let b = right.get(index).copied().unwrap_or(0);
+        if a != b {
+            return a < b;
+        }
+    }
+    false
+}
 
 pub const RELEASES_API: &str = "https://api.github.com/repos/mel0k1/Illusio/releases/latest";
 
@@ -80,7 +111,7 @@ pub fn check(current_version: &str) -> Result<ReleaseCheck, String> {
     let Some(asset) = asset else {
         return Ok(ReleaseCheck::default());
     };
-    let available = remote::version_is_below(current_version, &version);
+    let available = version_is_below(current_version, &version);
     Ok(ReleaseCheck {
         available,
         version,
@@ -269,8 +300,8 @@ mod tests {
 
     #[test]
     fn detects_newer_release() {
-        assert!(remote::version_is_below("0.4.0", "0.5.0"));
-        assert!(!remote::version_is_below("0.5.0", "0.5.0"));
+        assert!(version_is_below("0.4.0", "0.5.0"));
+        assert!(!version_is_below("0.5.0", "0.5.0"));
     }
 
     #[test]

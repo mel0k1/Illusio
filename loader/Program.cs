@@ -34,7 +34,7 @@ internal static class Subverters
 
     public static void Apply(Harmony harmony)
     {
-        _pending = ParsePaths(Environment.GetEnvironmentVariable(EnvName));
+        _pending = ParsePaths(Envsey.Get(EnvName));
         if (_pending.Count == 0)
             return;
 
@@ -79,7 +79,12 @@ internal static class Subverters
         {
             try
             {
-                var assembly = Assembly.LoadFrom(path);
+                Assembly? assembly = null;
+                Hidesey.SuppressAssemblyLoadDuring(() => assembly = Assembly.LoadFrom(path));
+                if (assembly == null)
+                    continue;
+
+                Hidesey.TrackMod(assembly);
                 _initMod.Invoke(__instance, new object?[] { assembly });
                 Console.WriteLine($"[ILLUSIO-SUBVERT] загружен {Path.GetFileName(path)}");
             }
@@ -128,15 +133,15 @@ internal static class ResourcePacks
 
     public static void Apply(Harmony harmony)
     {
-        var dumpFlag = Environment.GetEnvironmentVariable(DumpEnv) == "1";
-        _dumpDir = Environment.GetEnvironmentVariable(DumpDirEnv);
+        var dumpFlag = Envsey.Get(DumpEnv) == "1";
+        _dumpDir = Envsey.Get(DumpDirEnv);
         if (dumpFlag && !string.IsNullOrWhiteSpace(_dumpDir))
         {
             StartDumper(harmony);
             return;
         }
 
-        foreach (var dir in ParseDirs(Environment.GetEnvironmentVariable(PacksEnv)))
+        foreach (var dir in ParseDirs(Envsey.Get(PacksEnv)))
         {
             try
             {
@@ -367,8 +372,7 @@ internal static class BuiltInPatches
 
     public static void Apply(Harmony harmony)
     {
-        if (Flag("ILLUSIO_PATCH_HWID"))
-            PatchHwid(harmony);
+        PatchHwid(harmony);
         if (Flag("ILLUSIO_PATCH_RPC"))
             PatchRpc(harmony);
         if (Flag("ILLUSIO_PATCH_JAM_DIALS"))
@@ -379,27 +383,54 @@ internal static class BuiltInPatches
 
     private static bool Flag(string name)
     {
-        return Environment.GetEnvironmentVariable(name) == "1";
+        return Envsey.Get(name) == "1";
     }
 
     private static void PatchHwid(Harmony harmony)
     {
-        var type = AccessTools.TypeByName("Robust.Client.HWId.BasicHWId");
-        if (type == null)
+        var mode = (Envsey.Get("ILLUSIO_HWID_MODE") ?? "").Trim().ToLowerInvariant();
+        if (mode.Length == 0)
         {
-            Console.WriteLine("[ILLUSIO-PATCH] HWID: тип не найден");
-            return;
+            if (!Flag("ILLUSIO_PATCH_HWID"))
+                return;
+
+            mode = "random";
         }
 
-        var modern = AccessTools.Method(type, "GetModern");
-        if (modern != null)
-            harmony.Patch(modern, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+        if (mode == "off")
+            return;
 
-        var legacy = AccessTools.Method(type, "GetLegacy");
-        if (legacy != null)
-            harmony.Patch(legacy, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+        var patched = 0;
+        foreach (var name in new[] { "Robust.Client.HWId.BasicHWId", "Robust.Client.Hwid.BasicHwid" })
+        {
+            var type = AccessTools.TypeByName(name);
+            if (type == null)
+                continue;
 
-        Console.WriteLine("[ILLUSIO-PATCH] HWID: подмена включена");
+            var modern = AccessTools.Method(type, "GetModern");
+            if (modern != null)
+            {
+                harmony.Patch(modern, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+                patched++;
+            }
+
+            var legacy = AccessTools.Method(type, "GetLegacy");
+            if (legacy != null)
+            {
+                harmony.Patch(legacy, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+                patched++;
+            }
+        }
+
+        var shared = AccessTools.TypeByName("Robust.Shared.Network.HWId");
+        var calc = shared == null ? null : AccessTools.Method(shared, "Calc");
+        if (calc != null)
+        {
+            harmony.Patch(calc, postfix: new HarmonyMethod(typeof(BuiltInPatches), nameof(HwidPostfix)));
+            patched++;
+        }
+
+        Console.WriteLine($"[ILLUSIO-PATCH] HWID: режим {mode}, точек патча {patched}");
     }
 
     private static void PatchRpc(Harmony harmony)
@@ -467,8 +498,30 @@ internal static class BuiltInPatches
         if (__result.Length <= 1)
             return;
 
+        var mode = (Envsey.Get("ILLUSIO_HWID_MODE") ?? "").Trim().ToLowerInvariant();
+        if (mode.Length == 0)
+            mode = "random";
+
+        if (mode == "fixed" && TryFillFixed(__result, (Envsey.Get("ILLUSIO_HWID_VALUE") ?? "").Trim()))
+            return;
+
         var raw = RandomBytes(__result.Length - 1);
         Array.Copy(raw, 0, __result, 1, raw.Length);
+    }
+
+    private static bool TryFillFixed(byte[] result, string value)
+    {
+        if (value.Length == 0 || value.Length % 2 != 0 || value.Any(character => !Uri.IsHexDigit(character)))
+            return false;
+
+        var bytes = new byte[value.Length / 2];
+        for (var index = 0; index < bytes.Length; index++)
+            bytes[index] = Convert.ToByte(value.Substring(index * 2, 2), 16);
+
+        for (var index = 1; index < result.Length; index++)
+            result[index] = bytes[(index - 1) % bytes.Length];
+
+        return true;
     }
 
     private static bool ReturnFalse()
@@ -538,8 +591,8 @@ internal class Program
         if (!TryGetLoader(clientAssembly, out var loader))
             return false;
 
-        var contentZip = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIP");
-        var modZips = Environment.GetEnvironmentVariable("SS14_LOADER_OVERLAY_ZIPS");
+        var contentZip = Envsey.Get("SS14_LOADER_OVERLAY_ZIP");
+        var modZips = Envsey.Get("SS14_LOADER_OVERLAY_ZIPS");
         var overlays = ParseOverlayZips(
             string.Join(';', new[] { contentZip, modZips }.Where(part => !string.IsNullOrWhiteSpace(part))));
         var extraMounts = new List<ApiMount>();
@@ -557,6 +610,7 @@ internal class Program
 
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
 
+            Envsey.Scrub();
             loader.Main(args);
         }
         finally
@@ -579,6 +633,15 @@ internal class Program
         catch (Exception e)
         {
             Console.WriteLine($"[ILLUSIO-PATCH] ошибка встроенных патчей: {e.Message}");
+        }
+
+        try
+        {
+            Hidesey.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-STEALTH] ошибка скрытия: {e.Message}");
         }
     }
 
@@ -606,7 +669,7 @@ internal class Program
 
     private void ApplyMods(IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)
     {
-        var paths = ParsePathList(Environment.GetEnvironmentVariable(ModsEnv));
+        var paths = ParsePathList(Envsey.Get(ModsEnv));
         if (paths.Count == 0)
             return;
 
@@ -642,7 +705,12 @@ internal class Program
             try
             {
                 var bytes = File.ReadAllBytes(path);
-                var assembly = Assembly.Load(bytes);
+                Assembly? assembly = null;
+                Hidesey.SuppressAssemblyLoadDuring(() => assembly = Assembly.Load(bytes));
+                if (assembly == null)
+                    continue;
+
+                Hidesey.TrackMod(assembly);
                 var marker = FindMarker(assembly);
                 var name = ReadMarkerString(marker, "Name");
                 var description = ReadMarkerString(marker, "Description");
@@ -911,6 +979,8 @@ internal class Program
     [STAThread]
     internal static int Main(string[] args)
     {
+        Envsey.Capture();
+
         if (args.Length >= 2 && args[0] == "scan-mods")
         {
             return RunScanMods(args[1]);

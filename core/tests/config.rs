@@ -61,6 +61,11 @@ fn config_roundtrip() {
         patch_rpc: false,
         patch_jam_dials: false,
         patch_blackhole: false,
+        hide_level: 2,
+        hwid_mode: "fixed".into(),
+        hwid_value: "aabb".into(),
+        hwid_optout: true,
+        dynamic_pgo: true,
     };
     save_to(&path, &config).expect("save failed");
     let loaded = load_from(&path).expect("load failed");

@@ -74,6 +74,24 @@ pub struct LaunchSpec {
     pub patch_jam_dials: bool,
     #[serde(default, rename = "patch_blackhole")]
     pub patch_blackhole: bool,
+    #[serde(default = "default_hide_level")]
+    pub hide_level: i64,
+    #[serde(default, rename = "hwid_mode")]
+    pub hwid_mode: String,
+    #[serde(default, rename = "hwid_value")]
+    pub hwid_value: String,
+    #[serde(default, rename = "hwid_optout")]
+    pub hwid_optout: bool,
+    #[serde(default = "default_true")]
+    pub dynamic_pgo: bool,
+}
+
+fn default_hide_level() -> i64 {
+    2
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub fn client_path(install_dir: &str) -> PathBuf {
@@ -206,7 +224,73 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     if spec.patch_blackhole {
         env.push(("ILLUSIO_PATCH_BLACKHOLE".into(), "1".into()));
     }
+    env.push((
+        "ILLUSIO_HIDE_LEVEL".into(),
+        spec.hide_level.clamp(0, 4).to_string(),
+    ));
+    let mut hwid_mode = spec.hwid_mode.trim().to_ascii_lowercase();
+    if hwid_mode.is_empty() && spec.patch_hwid {
+        hwid_mode = "random".into();
+    }
+    match hwid_mode.as_str() {
+        "random" => {
+            env.push(("ILLUSIO_HWID_MODE".into(), "random".into()));
+        }
+        "fixed" | "account" => {
+            if let Some(value) = normalize_hwid(&spec.hwid_value) {
+                env.push(("ILLUSIO_HWID_MODE".into(), "fixed".into()));
+                env.push(("ILLUSIO_HWID_VALUE".into(), value));
+            } else {
+                env.push(("ILLUSIO_HWID_MODE".into(), "random".into()));
+            }
+        }
+        _ => {}
+    }
+    if spec.hwid_optout {
+        env.push(("ROBUST_AUTH_ALLOW_HWID".into(), "0".into()));
+    }
+    if spec.dynamic_pgo {
+        for (key, value) in [
+            ("DOTNET_TieredPGO", "1"),
+            ("DOTNET_TC_QuickJitForLoops", "1"),
+            ("DOTNET_ReadyToRun", "0"),
+            ("DOTNET_gcServer", "1"),
+            ("DOTNET_TieredCompilationMinCallCount", "0"),
+        ] {
+            env.push((key.into(), value.into()));
+        }
+    }
     env
+}
+
+pub fn normalize_hwid(raw: &str) -> Option<String> {
+    let value = raw.trim().trim_start_matches("0x").to_ascii_lowercase();
+    if value.is_empty() || !value.len().is_multiple_of(2) || value.len() > 128 {
+        return None;
+    }
+    if !value.chars().all(|character| character.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(value)
+}
+
+pub fn stealth_fuse(hide_level: i64, engine_version: &str) -> Result<(), String> {
+    if hide_level > 0 {
+        return Ok(());
+    }
+    let major = engine_version
+        .trim()
+        .split('.')
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    if major >= 183 {
+        return Err(
+            "скрытие патчей выключено, а движок этой сборки может раскрывать моды; включите скрытие патчей в настройках"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn sanitize_fork_id(raw: &str) -> String {
@@ -297,6 +381,7 @@ fn apply_streams(command: &mut Command, log_dir: &str) {
 }
 
 pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
+    stealth_fuse(spec.hide_level, &spec.build_engine_version)?;
     let config = crate::config::load().unwrap_or_default();
     let proxy = config.proxy();
     if spec.mode.trim().eq_ignore_ascii_case("acz") {
@@ -520,6 +605,68 @@ mod tests {
         assert_eq!(sanitize_fork_id("Corvax/Warden:42"), "Corvax_Warden_42");
         assert_eq!(sanitize_fork_id("  "), "unknown");
         assert_eq!(sanitize_fork_id("///"), "___");
+    }
+
+    #[test]
+    fn env_carries_stealth_hwid_pgo() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            hide_level: 3,
+            hwid_mode: "fixed".into(),
+            hwid_value: "0xABCD".into(),
+            hwid_optout: true,
+            dynamic_pgo: true,
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("ILLUSIO_HIDE_LEVEL".into(), "3".into())));
+        assert!(env.contains(&("ILLUSIO_HWID_MODE".into(), "fixed".into())));
+        assert!(env.contains(&("ILLUSIO_HWID_VALUE".into(), "abcd".into())));
+        assert!(env.contains(&("ROBUST_AUTH_ALLOW_HWID".into(), "0".into())));
+        assert!(env.contains(&("DOTNET_TieredPGO".into(), "1".into())));
+    }
+
+    #[test]
+    fn legacy_hwid_flag_maps_to_random() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            patch_hwid: true,
+            hide_level: 2,
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("ILLUSIO_HWID_MODE".into(), "random".into())));
+        assert!(env.contains(&("ILLUSIO_HIDE_LEVEL".into(), "2".into())));
+    }
+
+    #[test]
+    fn invalid_hwid_falls_back_to_random() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            hwid_mode: "fixed".into(),
+            hwid_value: "zzz".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("ILLUSIO_HWID_MODE".into(), "random".into())));
+        assert!(!env.iter().any(|(key, _)| key == "ILLUSIO_HWID_VALUE"));
+    }
+
+    #[test]
+    fn fuse_blocks_hidden_engine_without_stealth() {
+        assert!(stealth_fuse(2, "240.4.0").is_ok());
+        assert!(stealth_fuse(0, "182.0.0").is_ok());
+        let result = stealth_fuse(0, "240.4.0");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalizes_hwid_values() {
+        assert_eq!(normalize_hwid(" 0xABCD ").as_deref(), Some("abcd"));
+        assert_eq!(normalize_hwid("AABB"), Some("aabb".to_string()));
+        assert_eq!(normalize_hwid("abc"), None);
+        assert_eq!(normalize_hwid(""), None);
+        assert_eq!(normalize_hwid("xy"), None);
     }
 
     #[test]

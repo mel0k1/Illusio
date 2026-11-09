@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -63,6 +64,11 @@ class AppController extends ChangeNotifier {
   bool patchRpc = false;
   bool patchJamDials = false;
   bool patchBlackhole = false;
+  int hideLevel = 2;
+  String hwidMode = 'off';
+  String hwidValue = '';
+  bool hwidOptout = false;
+  bool dynamicPgo = true;
 
   String updateVersion = '';
   String updateNotes = '';
@@ -194,6 +200,11 @@ class AppController extends ChangeNotifier {
       patchRpc = config['patch_rpc'] == true;
       patchJamDials = config['patch_jam_dials'] == true;
       patchBlackhole = config['patch_blackhole'] == true;
+      hideLevel = (config['hide_level'] as num?)?.toInt() ?? 2;
+      hwidMode = config['hwid_mode']?.toString() ?? 'off';
+      hwidValue = config['hwid_value']?.toString() ?? '';
+      hwidOptout = config['hwid_optout'] == true;
+      dynamicPgo = config['dynamic_pgo'] != false;
       dllModsEnabled
         ..clear()
         ..addAll(
@@ -269,6 +280,7 @@ class AppController extends ChangeNotifier {
       'username': account.username,
       'user_id': account.userId,
       'token': account.token,
+      'hwid': account.hwid,
     });
     final result = await Isolate.run(() => Core.refreshLogin(payload));
     if (result['ok'] != true) {
@@ -427,6 +439,11 @@ class AppController extends ChangeNotifier {
       'patch_rpc': patchRpc,
       'patch_jam_dials': patchJamDials,
       'patch_blackhole': patchBlackhole,
+      'hide_level': hideLevel,
+      'hwid_mode': hwidMode,
+      'hwid_value': hwidValue,
+      'hwid_optout': hwidOptout,
+      'dynamic_pgo': dynamicPgo,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
@@ -613,6 +630,7 @@ class AppController extends ChangeNotifier {
       'username': account.username,
       'user_id': account.userId,
       'token': account.token,
+      'hwid': account.hwid,
     });
     final result = await Isolate.run(() => Core.refreshLogin(payload));
     if (result['ok'] == true) {
@@ -892,6 +910,79 @@ class AppController extends ChangeNotifier {
     saveConfig();
   }
 
+  void setHideLevel(int value) {
+    hideLevel = value.clamp(0, 4);
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setHwidMode(String value) {
+    hwidMode = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setHwidValue(String value) {
+    hwidValue = value.trim().toLowerCase();
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setHwidOptout(bool value) {
+    hwidOptout = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setDynamicPgo(bool value) {
+    dynamicPgo = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  bool get hwidValueValid {
+    final value = hwidValue.trim().toLowerCase().replaceFirst(RegExp('^0x'), '');
+    if (value.isEmpty) {
+      return true;
+    }
+    if (value.length.isOdd || value.length > 128) {
+      return false;
+    }
+    return RegExp('^[0-9a-f]+\$').hasMatch(value);
+  }
+
+  String generateHwid() {
+    final random = Random.secure();
+    const digits = '0123456789abcdef';
+    return List.generate(64, (_) => digits[random.nextInt(16)]).join();
+  }
+
+  Future<void> ensureAccountHwid() async {
+    if (hwidMode != 'account' || isGuest || login == null) {
+      return;
+    }
+    if (login!.hwid.trim().isNotEmpty) {
+      return;
+    }
+    final hwid = generateHwid();
+    final updated = LoginInfo(
+      token: login!.token,
+      username: login!.username,
+      userId: login!.userId,
+      expireTime: login!.expireTime,
+      authServer: login!.authServer,
+      hwid: hwid,
+    );
+    login = updated;
+    final index = accounts.indexWhere(
+      (element) => element.username == updated.username,
+    );
+    if (index >= 0) {
+      accounts[index] = updated;
+    }
+    await saveConfig();
+  }
+
   Future<void> checkForUpdates({bool auto = false}) async {
     if (updateBusy) {
       return;
@@ -1159,10 +1250,6 @@ class AppController extends ChangeNotifier {
     return result['ok'] == true;
   }
 
-  Future<Map<String, dynamic>> checkLauncherUpdate(String version) async {
-    return Isolate.run(() => Core.checkUpdate(version));
-  }
-
   GameServer? selectedServer;
   ServerStatusInfo? statusInfo;
   bool loading = false;
@@ -1292,6 +1379,11 @@ class AppController extends ChangeNotifier {
       'patch_rpc': patchRpc,
       'patch_jam_dials': patchJamDials,
       'patch_blackhole': patchBlackhole,
+      'hide_level': hideLevel,
+      'hwid_mode': hwidMode,
+      'hwid_value': hwidMode == 'account' ? (login?.hwid ?? '') : hwidValue,
+      'hwid_optout': hwidOptout,
+      'dynamic_pgo': dynamicPgo,
     };
   }
 
@@ -1304,6 +1396,7 @@ class AppController extends ChangeNotifier {
     downloadState = DownloadStateInfo.empty;
     notifyListeners();
 
+    await ensureAccountHwid();
     await ensureFreshLogin();
 
     final payload = jsonEncode({

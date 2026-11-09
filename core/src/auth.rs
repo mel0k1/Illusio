@@ -11,6 +11,8 @@ pub struct LoginInfo {
     pub user_id: String,
     pub expire_time: String,
     pub auth_server: String,
+    #[serde(default)]
+    pub hwid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +137,7 @@ pub fn authenticate(
             user_id: parsed.user_id,
             expire_time: parsed.expire_time,
             auth_server: normalize_auth_url(auth_url),
+            hwid: String::new(),
         });
     }
 
@@ -190,6 +193,7 @@ pub fn refresh(auth_url: &str, login: &LoginInfo) -> Result<LoginInfo, String> {
         user_id: login.user_id.clone(),
         expire_time: parsed.expire_time,
         auth_server: normalize_auth_url(auth_url),
+        hwid: login.hwid.clone(),
     })
 }
 

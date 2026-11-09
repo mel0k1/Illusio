@@ -60,6 +60,13 @@ jobs:
 
       - run: flutter create . --platforms=${{ matrix.platform }} --project-name illusio
 
+      - name: Apply app icon
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path windows/runner/resources | Out-Null
+          Copy-Item installer/app_icon.ico windows/runner/resources/app_icon.ico -Force
+
       - run: flutter pub get
 
       - run: flutter analyze

@@ -93,9 +93,6 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _pingServers = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_ping_servers')
       .asFunction();
-  static final Pointer<Utf8> Function(Pointer<Utf8>) _checkUpdate = _lib
-      .lookup<NativeFunction<TakeStringNative>>('illusio_check_update')
-      .asFunction();
   static final Pointer<Utf8> Function(Pointer<Utf8>) _proxyProbe = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_proxy_probe')
       .asFunction();
@@ -182,9 +179,6 @@ class Core {
 
   static Map<String, dynamic> pingServers(String json) =>
       _withString(json, _pingServers);
-
-  static Map<String, dynamic> checkUpdate(String version) =>
-      _withString(version, _checkUpdate);
 
   static Map<String, dynamic> logsDir() => _run(_logsDir);
 

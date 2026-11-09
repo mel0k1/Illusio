@@ -10,7 +10,6 @@ pub mod hub;
 pub mod install;
 mod launch;
 pub mod packs;
-pub mod remote;
 pub mod socks;
 pub mod status;
 pub mod sys;
@@ -231,6 +230,8 @@ struct RefreshPayload {
     user_id: String,
     #[serde(default)]
     token: String,
+    #[serde(default)]
+    hwid: String,
 }
 
 #[derive(Deserialize)]
@@ -281,6 +282,7 @@ pub unsafe extern "C" fn illusio_refresh_login(raw: *const c_char) -> *mut c_cha
                     user_id: payload.user_id,
                     expire_time: String::new(),
                     auth_server: auth::normalize_auth_url(&payload.auth_url),
+                    hwid: payload.hwid,
                 };
                 match auth::refresh(&payload.auth_url, &login) {
                     Ok(updated) => serde_json::json!({"ok": true, "login": updated}).to_string(),
@@ -379,26 +381,6 @@ pub unsafe extern "C" fn illusio_ping_servers(raw: *const c_char) -> *mut c_char
             "pings": pings,
         })
         .to_string()
-    })
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn illusio_check_update(current: *const c_char) -> *mut c_char {
-    guarded(|| match remote::fetch_update_check(&read_ptr(current)) {
-        Ok(check) => serde_json::json!({
-            "ok": true,
-            "blocked": check.blocked,
-            "min_version": check.min_version,
-            "reason": check.reason,
-        })
-        .to_string(),
-        Err(_) => serde_json::json!({
-            "ok": true,
-            "blocked": false,
-            "min_version": "",
-            "reason": "",
-        })
-        .to_string(),
     })
 }
 
