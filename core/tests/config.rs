@@ -49,6 +49,9 @@ fn config_roundtrip() {
         proxy_udp_relay: false,
         proxy_apply_to_game: false,
         dll_mods_enabled: Vec::new(),
+        subverter_enabled: vec!["game_mod.dll".into()],
+        res_packs_enabled: vec!["HiTech".into()],
+        dump_resources: true,
         blob_keep_days: 7,
         bundle_keep: 10,
         engine_keep: 2,
@@ -72,6 +75,9 @@ fn config_roundtrip() {
     assert!(loaded.hide_empty);
     assert!(loaded.vsync);
     assert_eq!(loaded.mods_enabled, vec!["pack_a.zip".to_string()]);
+    assert_eq!(loaded.subverter_enabled, vec!["game_mod.dll".to_string()]);
+    assert_eq!(loaded.res_packs_enabled, vec!["HiTech".to_string()]);
+    assert!(loaded.dump_resources);
     assert_eq!(loaded.hubs, vec!["https://hub.example.com/".to_string()]);
     assert_eq!(loaded.guest_username, "Гость");
     assert!(loaded.client_logs);

@@ -108,6 +108,12 @@ pub struct Config {
     pub proxy_apply_to_game: bool,
     #[serde(default)]
     pub dll_mods_enabled: Vec<String>,
+    #[serde(default)]
+    pub subverter_enabled: Vec<String>,
+    #[serde(default)]
+    pub res_packs_enabled: Vec<String>,
+    #[serde(default)]
+    pub dump_resources: bool,
     #[serde(default = "default_blob_keep_days")]
     pub blob_keep_days: i64,
     #[serde(default = "default_bundle_keep")]
@@ -231,6 +237,14 @@ pub fn mods_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("mods"))
 }
 
+pub fn res_packs_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("respacks"))
+}
+
+pub fn dumps_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("dumps"))
+}
+
 pub fn logs_dir() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("logs"))
 }
@@ -308,6 +322,9 @@ mod tests {
         config.proxy_apply_to_game = true;
         config.language = "en".into();
         config.dll_mods_enabled = vec!["half.dll".into()];
+        config.subverter_enabled = vec!["/mods/subverter.dll".into()];
+        config.res_packs_enabled = vec!["HiTech".into()];
+        config.dump_resources = true;
         let raw = serde_json::to_string(&config).unwrap();
         let parsed: Config = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed.hubs, config.hubs);
@@ -319,6 +336,12 @@ mod tests {
         assert!(parsed.proxy().configured());
         assert_eq!(parsed.language, "en");
         assert_eq!(parsed.dll_mods_enabled, vec!["half.dll".to_string()]);
+        assert_eq!(
+            parsed.subverter_enabled,
+            vec!["/mods/subverter.dll".to_string()]
+        );
+        assert_eq!(parsed.res_packs_enabled, vec!["HiTech".to_string()]);
+        assert!(parsed.dump_resources);
         assert_eq!(parsed.guest_username, "Гость");
         assert_eq!(parsed.username_override, "mel0k1");
         assert!(parsed.client_logs);
@@ -341,6 +364,9 @@ mod tests {
         assert_eq!(parsed.language, "ru");
         assert!(!parsed.proxy_enabled);
         assert!(parsed.dll_mods_enabled.is_empty());
+        assert!(parsed.subverter_enabled.is_empty());
+        assert!(parsed.res_packs_enabled.is_empty());
+        assert!(!parsed.dump_resources);
     }
 
     #[test]

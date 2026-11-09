@@ -21,7 +21,343 @@ internal sealed record ModInfo(
     Assembly Assembly,
     Type? Marker,
     string Name,
-    string Description);
+    string Description,
+    bool Preload);
+
+internal static class Subverters
+{
+    private const string EnvName = "SS14_LOADER_SUBVERTERS";
+
+    private static List<string> _pending = new();
+    private static MethodInfo? _initMod;
+
+    public static void Apply(Harmony harmony)
+    {
+        _pending = ParsePaths(Environment.GetEnvironmentVariable(EnvName));
+        if (_pending.Count == 0)
+            return;
+
+        var modLoader = AccessTools.TypeByName("Robust.Shared.ContentPack.ModLoader");
+        var target = modLoader == null
+            ? null
+            : FindMethod(modLoader, "TryLoadModules") ?? FindMethod(modLoader, "LoadModules");
+        if (target == null)
+        {
+            Console.WriteLine("[ILLUSIO-SUBVERT] Robust ModLoader не найден, сайдлоад отключён");
+            _pending.Clear();
+            return;
+        }
+
+        harmony.Patch(
+            target,
+            postfix: new HarmonyMethod(typeof(Subverters), nameof(TryLoadModulesPostfix)));
+        Console.WriteLine($"[ILLUSIO-SUBVERT] сайдлоад {_pending.Count} мод(ей) через ModLoader");
+    }
+
+    private static void TryLoadModulesPostfix(object __instance)
+    {
+        if (_pending.Count == 0)
+            return;
+
+        var paths = _pending;
+        _pending = new List<string>();
+
+        if (_initMod == null)
+        {
+            var baseLoader = AccessTools.TypeByName("Robust.Shared.ContentPack.BaseModLoader");
+            _initMod = baseLoader == null ? null : AccessTools.Method(baseLoader, "InitMod");
+        }
+
+        if (_initMod == null)
+        {
+            Console.WriteLine("[ILLUSIO-SUBVERT] BaseModLoader.InitMod не найден");
+            return;
+        }
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                var assembly = Assembly.LoadFrom(path);
+                _initMod.Invoke(__instance, new object?[] { assembly });
+                Console.WriteLine($"[ILLUSIO-SUBVERT] загружен {Path.GetFileName(path)}");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(
+                    $"[ILLUSIO-SUBVERT] {Path.GetFileName(path)}: {e.InnerException?.Message ?? e.Message}");
+            }
+        }
+    }
+
+    private static List<string> ParsePaths(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+
+        return raw
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(File.Exists)
+            .ToList();
+    }
+
+    private static MethodInfo? FindMethod(Type type, string name)
+    {
+        return AccessTools.GetDeclaredMethods(type)
+            .FirstOrDefault(method => method.Name == name);
+    }
+}
+
+internal static class ResourcePacks
+{
+    private const string PacksEnv = "SS14_LOADER_RES_PACKS";
+    private const string DumpEnv = "ILLUSIO_DUMP";
+    private const string DumpDirEnv = "SS14_LOADER_DUMP_DIR";
+    private const string MetaFileName = "meta.json";
+
+    private static readonly List<string> Replacements = new();
+
+    private static Type? _resPath;
+    private static ConstructorInfo? _resPathCtor;
+    private static FieldInfo? _canonPath;
+    private static MethodInfo? _findFiles;
+    private static MethodInfo? _fileRead;
+    private static string? _dumpDir;
+    private static int _dumpStarted;
+
+    public static void Apply(Harmony harmony)
+    {
+        var dumpFlag = Environment.GetEnvironmentVariable(DumpEnv) == "1";
+        _dumpDir = Environment.GetEnvironmentVariable(DumpDirEnv);
+        if (dumpFlag && !string.IsNullOrWhiteSpace(_dumpDir))
+        {
+            StartDumper(harmony);
+            return;
+        }
+
+        foreach (var dir in ParseDirs(Environment.GetEnvironmentVariable(PacksEnv)))
+        {
+            try
+            {
+                CollectReplacements(dir);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ILLUSIO-RESPACK] {dir}: {e.Message}");
+            }
+        }
+
+        if (Replacements.Count == 0)
+            return;
+
+        if (!PrepareTargets(harmony, nameof(FindFilesSwapPostfix)))
+            return;
+
+        Console.WriteLine($"[ILLUSIO-RESPACK] {Replacements.Count} подмен путей");
+    }
+
+    private static void CollectReplacements(string directory)
+    {
+        var absolute = Path.GetFullPath(directory);
+        foreach (var file in Directory.GetFiles(absolute, "*", SearchOption.AllDirectories))
+        {
+            if (file.EndsWith(MetaFileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            Replacements.Add(file);
+        }
+    }
+
+    private static bool PrepareTargets(Harmony harmony, string postfixName)
+    {
+        var resourceManager = AccessTools.TypeByName("Robust.Shared.ContentPack.ResourceManager");
+        _resPath = AccessTools.TypeByName("Robust.Shared.Utility.ResPath");
+        if (resourceManager == null || _resPath == null)
+        {
+            Console.WriteLine("[ILLUSIO-RESPACK] ResourceManager или ResPath не найдены");
+            return false;
+        }
+
+        _resPathCtor = AccessTools.Constructor(_resPath, new[] { typeof(string) });
+        _canonPath = AccessTools.Field(_resPath, "CanonPath");
+        _findFiles = FindMethodWithParam(resourceManager, "ContentFindFiles", _resPath);
+        _fileRead = FindMethodWithParam(resourceManager, "ContentFileRead", _resPath);
+        if (_resPathCtor == null || _canonPath == null || _findFiles == null)
+        {
+            Console.WriteLine("[ILLUSIO-RESPACK] не удалось собрать точки патча");
+            return false;
+        }
+
+        harmony.Patch(
+            _findFiles,
+            postfix: new HarmonyMethod(typeof(ResourcePacks), postfixName));
+        return true;
+    }
+
+    private static void FindFilesSwapPostfix(ref object? __result)
+    {
+        if (_resPathCtor == null || _canonPath == null || Replacements.Count == 0)
+            return;
+
+        if (__result is not IEnumerable source)
+            return;
+
+        var listType = typeof(List<>).MakeGenericType(_resPath!);
+        if (Activator.CreateInstance(listType) is not IList replaced)
+            return;
+
+        var pending = new List<string>(Replacements);
+        foreach (var item in source)
+        {
+            var canonPath = _canonPath.GetValue(item) as string ?? string.Empty;
+            var swapped = false;
+            for (var index = 0; index < pending.Count; index++)
+            {
+                if (canonPath.Length == 0 ||
+                    !pending[index].EndsWith(canonPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                replaced.Add(_resPathCtor.Invoke(new object?[] { pending[index] }));
+                pending.RemoveAt(index);
+                swapped = true;
+                break;
+            }
+
+            if (!swapped)
+                replaced.Add(item);
+        }
+
+        __result = replaced;
+    }
+
+    private static void StartDumper(Harmony harmony)
+    {
+        if (!PrepareTargets(harmony, nameof(FindFilesDumpPostfix)))
+            return;
+
+        if (_fileRead == null)
+        {
+            Console.WriteLine("[ILLUSIO-DUMP] ContentFileRead не найден");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(_dumpDir!);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-DUMP] каталог недоступен: {e.Message}");
+            return;
+        }
+
+        Console.WriteLine($"[ILLUSIO-DUMP] выгрузка ресурсов в {_dumpDir}");
+    }
+
+    private static void FindFilesDumpPostfix(object __instance)
+    {
+        if (Interlocked.Exchange(ref _dumpStarted, 1) == 1)
+            return;
+
+        var instance = __instance;
+        var findFiles = _findFiles;
+        var fileRead = _fileRead;
+        var resPathCtor = _resPathCtor;
+        var canonPath = _canonPath;
+        var dumpDir = _dumpDir;
+        if (findFiles == null || fileRead == null || resPathCtor == null || canonPath == null)
+            return;
+
+        new Thread(() => DumpAll(
+                instance,
+                findFiles,
+                fileRead,
+                resPathCtor,
+                canonPath,
+                dumpDir ?? "dump"))
+        { IsBackground = true }.Start();
+    }
+
+    private static void DumpAll(
+        object instance,
+        MethodInfo findFiles,
+        MethodInfo fileRead,
+        ConstructorInfo resPathCtor,
+        FieldInfo canonPath,
+        string dumpDir)
+    {
+        try
+        {
+            var root = resPathCtor.Invoke(new object?[] { "/" });
+            if (findFiles.Invoke(instance, new object?[] { root }) is not IEnumerable files)
+                return;
+
+            var count = 0;
+            foreach (var item in files)
+            {
+                var canon = canonPath.GetValue(item) as string ?? string.Empty;
+                if (canon.Length == 0)
+                    continue;
+
+                var relative = canon.StartsWith('/') ? canon[1..] : canon;
+                var target = Path.Combine(dumpDir, relative);
+                try
+                {
+                    if (fileRead.Invoke(instance, new object?[] { item }) is not Stream stream)
+                        continue;
+
+                    using (stream)
+                    {
+                        var parent = Path.GetDirectoryName(target);
+                        if (!string.IsNullOrEmpty(parent))
+                            Directory.CreateDirectory(parent);
+
+                        using var output = File.Create(target);
+                        stream.CopyTo(output);
+                    }
+
+                    count++;
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"[ILLUSIO-DUMP] {canon}: {e.Message}");
+                }
+            }
+
+            Console.WriteLine($"[ILLUSIO-DUMP] выгружено {count} файлов в {dumpDir}");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-DUMP] ошибка выгрузки: {e.Message}");
+        }
+    }
+
+    private static List<string> ParseDirs(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+
+        return raw
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(Directory.Exists)
+            .ToList();
+    }
+
+    private static MethodInfo? FindMethodWithParam(Type type, string name, Type param)
+    {
+        var nullableParam = typeof(Nullable<>).MakeGenericType(param);
+        return AccessTools.GetDeclaredMethods(type)
+            .Where(method => method.Name == name && method.GetParameters().Length == 1)
+            .OrderBy(method => method.GetParameters()[0].ParameterType == param
+                ? 0
+                : method.GetParameters()[0].ParameterType == nullableParam
+                    ? 1
+                    : 2)
+            .FirstOrDefault();
+    }
+}
 
 internal static class BuiltInPatches
 {
@@ -214,7 +550,9 @@ internal class Program
             }
 
             ApplyBuiltInPatches(clientAssembly);
+            TryOpenAssembly("Robust.Shared", out _);
             ApplyMods(overlays);
+            ApplyEnginePatches();
 
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
 
@@ -243,6 +581,28 @@ internal class Program
         }
     }
 
+    private void ApplyEnginePatches()
+    {
+        var harmony = new Harmony(HarmonyId);
+        try
+        {
+            Subverters.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-SUBVERT] ошибка сайдлоада: {e.Message}");
+        }
+
+        try
+        {
+            ResourcePacks.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-RESPACK] ошибка ресурс-паков: {e.Message}");
+        }
+    }
+
     private void ApplyMods(IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)
     {
         var paths = ParsePathList(Environment.GetEnvironmentVariable(ModsEnv));
@@ -254,7 +614,10 @@ internal class Program
             return;
 
         var harmony = new Harmony(HarmonyId);
-        var failed = ApplyModList(mods, harmony);
+        var preload = mods.Where(mod => mod.Preload).ToList();
+        var rest = mods.Where(mod => !mod.Preload).ToList();
+        ApplyModList(preload, harmony);
+        var failed = ApplyModList(rest, harmony);
         if (failed.Count > 0)
             StartContentPatchThread(failed, harmony, overlays);
     }
@@ -282,11 +645,12 @@ internal class Program
                 var marker = FindMarker(assembly);
                 var name = ReadMarkerString(marker, "Name");
                 var description = ReadMarkerString(marker, "Description");
+                var preload = ReadMarkerBool(marker, "Preload");
                 var displayName = string.IsNullOrWhiteSpace(name)
                     ? Path.GetFileNameWithoutExtension(path)
                     : name;
                 Console.WriteLine($"[ILLUSIO-MODS] загружен {displayName} ({Path.GetFileName(path)})");
-                result.Add(new ModInfo(path, assembly, marker, displayName, description ?? ""));
+                result.Add(new ModInfo(path, assembly, marker, displayName, description ?? "", preload));
             }
             catch (Exception e)
             {
@@ -302,6 +666,13 @@ internal class Program
         return marker
             ?.GetField(field, BindingFlags.Public | BindingFlags.Static)
             ?.GetValue(null) as string;
+    }
+
+    private static bool ReadMarkerBool(Type? marker, string field)
+    {
+        return marker
+            ?.GetField(field, BindingFlags.Public | BindingFlags.Static)
+            ?.GetValue(null) is true;
     }
 
     private static Type? FindMarker(Assembly assembly)
@@ -426,18 +797,32 @@ internal class Program
                 using var stream = File.OpenRead(dll);
                 var assembly = context.LoadFromStream(stream);
                 var type = FindMarker(assembly);
+                var version = assembly.GetName().Version?.ToString() ?? "";
                 if (type == null)
+                {
+                    results.Add(new
+                    {
+                        file = Path.GetFileName(dll),
+                        name = assembly.GetName().Name ?? "",
+                        description = "",
+                        version,
+                        preload = false,
+                        game = true,
+                    });
                     continue;
+                }
 
                 var name = ReadMarkerString(type, "Name") ?? "";
                 var description = ReadMarkerString(type, "Description") ?? "";
-                var version = assembly.GetName().Version?.ToString() ?? "";
+                var preload = ReadMarkerBool(type, "Preload");
                 results.Add(new
                 {
                     file = Path.GetFileName(dll),
                     name,
                     description,
                     version,
+                    preload,
+                    game = false,
                 });
             }
             catch (Exception e)

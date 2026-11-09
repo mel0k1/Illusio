@@ -56,6 +56,12 @@ pub struct LaunchSpec {
     pub mods: Vec<String>,
     #[serde(default)]
     pub mod_dlls: Vec<String>,
+    #[serde(default)]
+    pub subverters: Vec<String>,
+    #[serde(default)]
+    pub res_packs: Vec<String>,
+    #[serde(default, rename = "dump_resources")]
+    pub dump_resources: bool,
     #[serde(default, rename = "log_dir")]
     pub log_dir: String,
     #[serde(default, rename = "allow_unsigned")]
@@ -135,6 +141,14 @@ pub fn build_args(spec: &LaunchSpec) -> Vec<String> {
     args
 }
 
+fn clean_list(values: &[String]) -> Vec<String> {
+    values
+        .iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
 pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     let mut env = Vec::new();
     let token = spec.auth_token.trim();
@@ -154,23 +168,31 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     if !server.is_empty() {
         env.push(("ROBUST_AUTH_SERVER".into(), server.to_string()));
     }
-    let mods: Vec<String> = spec
-        .mods
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
+    let mods = clean_list(&spec.mods);
     if !mods.is_empty() {
         env.push(("SS14_LOADER_OVERLAY_ZIPS".into(), mods.join(";")));
     }
-    let dlls: Vec<String> = spec
-        .mod_dlls
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
+    let dlls = clean_list(&spec.mod_dlls);
     if !dlls.is_empty() {
         env.push(("SS14_LOADER_MOD_DLLS".into(), dlls.join(";")));
+    }
+    let subverters = clean_list(&spec.subverters);
+    if !subverters.is_empty() {
+        env.push(("SS14_LOADER_SUBVERTERS".into(), subverters.join(";")));
+    }
+    let packs = clean_list(&spec.res_packs);
+    if !packs.is_empty() {
+        env.push(("SS14_LOADER_RES_PACKS".into(), packs.join(";")));
+    }
+    if spec.dump_resources {
+        env.push(("ILLUSIO_DUMP".into(), "1".into()));
+        let fork = sanitize_fork_id(&spec.build_fork_id);
+        if let Some(dir) = crate::config::dumps_dir() {
+            env.push((
+                "SS14_LOADER_DUMP_DIR".into(),
+                dir.join(fork).display().to_string(),
+            ));
+        }
     }
     if spec.patch_hwid {
         env.push(("ILLUSIO_PATCH_HWID".into(), "1".into()));
@@ -185,6 +207,28 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
         env.push(("ILLUSIO_PATCH_BLACKHOLE".into(), "1".into()));
     }
     env
+}
+
+fn sanitize_fork_id(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_string();
+    }
+    let safe: String = trimmed
+        .chars()
+        .map(|value| {
+            if value.is_ascii_alphanumeric() || value == '-' || value == '_' {
+                value
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if safe.is_empty() {
+        "unknown".to_string()
+    } else {
+        safe
+    }
 }
 
 fn apply_proxy_env(command: &mut Command, proxy: &ProxyConfig) {
@@ -427,6 +471,55 @@ mod tests {
             "SS14_LOADER_MOD_DLLS".into(),
             "/mods/a.dll;/mods/b.dll".into()
         )));
+    }
+
+    #[test]
+    fn env_carries_subverters_and_packs() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            subverters: vec!["/mods/game.dll".into(), " ".into()],
+            res_packs: vec!["/packs/HiTech".into()],
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("SS14_LOADER_SUBVERTERS".into(), "/mods/game.dll".into())));
+        assert!(env.contains(&("SS14_LOADER_RES_PACKS".into(), "/packs/HiTech".into())));
+        assert!(!env.iter().any(|(key, _)| key == "ILLUSIO_DUMP"));
+    }
+
+    #[test]
+    fn env_sets_dump_dir_per_fork() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            dump_resources: true,
+            build_fork_id: "HiTech/Fork v2".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        let dump = env
+            .iter()
+            .find(|(key, _)| key == "SS14_LOADER_DUMP_DIR")
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default();
+        assert!(dump.contains("HiTech_Fork_v2"));
+        assert!(env.contains(&("ILLUSIO_DUMP".into(), "1".into())));
+        let empty = LaunchSpec {
+            auth_token: "tok".into(),
+            dump_resources: true,
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&empty);
+        assert!(env
+            .iter()
+            .any(|(key, value)| key == "SS14_LOADER_DUMP_DIR" && value.contains("unknown")));
+    }
+
+    #[test]
+    fn sanitizes_fork_ids() {
+        assert_eq!(sanitize_fork_id("space_wizards"), "space_wizards");
+        assert_eq!(sanitize_fork_id("Corvax/Warden:42"), "Corvax_Warden_42");
+        assert_eq!(sanitize_fork_id("  "), "unknown");
+        assert_eq!(sanitize_fork_id("///"), "___");
     }
 
     #[test]

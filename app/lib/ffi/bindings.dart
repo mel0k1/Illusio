@@ -78,6 +78,15 @@ class Core {
   static final Pointer<Utf8> Function() _modsDir = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_mods_dir')
       .asFunction();
+  static final Pointer<Utf8> Function() _resPacksDir = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_res_packs_dir')
+      .asFunction();
+  static final Pointer<Utf8> Function() _dumpsDir = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_dumps_dir')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _listPacks = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_list_packs')
+      .asFunction();
   static final Pointer<Utf8> Function() _clearCache = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_clear_cache')
       .asFunction();
@@ -108,8 +117,9 @@ class Core {
   static final Pointer<Utf8> Function() _logsDir = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_logs_dir')
       .asFunction();
-  static final void Function(Pointer<Utf8>) _free =
-      _lib.lookup<NativeFunction<FreeNative>>('illusio_free').asFunction();
+  static final void Function(Pointer<Utf8>) _free = _lib
+      .lookup<NativeFunction<FreeNative>>('illusio_free')
+      .asFunction();
 
   static String version() {
     final result = _run(_version);
@@ -160,6 +170,13 @@ class Core {
       _withString(dir, _scanMods);
 
   static Map<String, dynamic> modsDir() => _run(_modsDir);
+
+  static Map<String, dynamic> resPacksDir() => _run(_resPacksDir);
+
+  static Map<String, dynamic> dumpsDir() => _run(_dumpsDir);
+
+  static Map<String, dynamic> listPacks(String dir) =>
+      _withString(dir, _listPacks);
 
   static Map<String, dynamic> clearCache() => _run(_clearCache);
 

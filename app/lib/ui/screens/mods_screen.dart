@@ -39,9 +39,17 @@ class _ModsScreenState extends State<ModsScreen> {
         final controller = widget.controller;
         final s = S.of(context);
         final zips = controller.mods.where((mod) => !mod.isDll).toList();
-        final dlls = controller.mods.where((mod) => mod.isDll).toList();
-        final enabled = controller.modsEnabled.length +
-            controller.dllModsEnabled.length;
+        final patchDlls = controller.mods
+            .where((mod) => mod.isDll && !mod.isGameMod)
+            .toList();
+        final gameDlls = controller.mods.where((mod) => mod.isGameMod).toList();
+        final packs = controller.resPacks;
+        final enabled =
+            controller.modsEnabled.length +
+            controller.dllModsEnabled.length +
+            controller.subverterEnabled.length +
+            controller.resPacksEnabled.length;
+        final empty = controller.mods.isEmpty && packs.isEmpty;
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
@@ -51,81 +59,22 @@ class _ModsScreenState extends State<ModsScreen> {
                 Text(s.modsTitle, style: theme.textTheme.headlineLarge),
                 const SizedBox(height: 4),
                 Text(
-                  controller.mods.isEmpty
+                  empty
                       ? s.modsSubtitle
-                      : s.modsCountLine(controller.mods.length, enabled),
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                      : s.modsCountLine(
+                          controller.mods.length + packs.length,
+                          enabled,
+                        ),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.extension, size: 20, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Text(s.howItWorks,
-                          style: theme.textTheme.titleMedium),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    s.zipHowText,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    s.dllHowText,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 14),
-                  SelectableText(
-                    controller.modsPath.isEmpty ? '…' : controller.modsPath,
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: controller.modsPath.isEmpty
-                            ? null
-                            : () async {
-                                final messenger =
-                                    ScaffoldMessenger.of(context);
-                                await controller.openModsDir();
-                                messenger.showSnackBar(
-                                  illusioSnackBar(s.folderOpened),
-                                );
-                              },
-                        icon: const Icon(Icons.folder_open, size: 20),
-                        label: Text(s.openFolder),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => controller.loadMods(),
-                        icon: const Icon(Icons.refresh, size: 20),
-                        label: Text(s.refresh),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _HowItWorksCard(controller: controller),
             const SizedBox(height: 20),
-            if (controller.mods.isEmpty)
+            if (empty)
               Container(
                 padding: const EdgeInsets.all(32),
                 decoration: BoxDecoration(
@@ -135,11 +84,13 @@ class _ModsScreenState extends State<ModsScreen> {
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.category_outlined,
-                        size: 44, color: scheme.onSurfaceVariant),
+                    Icon(
+                      Icons.category_outlined,
+                      size: 44,
+                      color: scheme.onSurfaceVariant,
+                    ),
                     const SizedBox(height: 16),
-                    Text(s.modsEmptyTitle,
-                        style: theme.textTheme.titleMedium),
+                    Text(s.modsEmptyTitle, style: theme.textTheme.titleMedium),
                     const SizedBox(height: 6),
                     Text(
                       s.modsEmptyHint,
@@ -168,10 +119,10 @@ class _ModsScreenState extends State<ModsScreen> {
                   const SizedBox(height: 10),
                 ],
               ],
-              if (dlls.isNotEmpty) ...[
+              if (patchDlls.isNotEmpty) ...[
                 _KindLabel(s.dllSection),
                 const SizedBox(height: 10),
-                for (final mod in dlls) ...[
+                for (final mod in patchDlls) ...[
                   _ModTile(
                     mod: mod,
                     title: mod.name.isEmpty ? mod.fileName : mod.name,
@@ -187,7 +138,39 @@ class _ModsScreenState extends State<ModsScreen> {
                   const SizedBox(height: 10),
                 ],
               ],
+              if (gameDlls.isNotEmpty) ...[
+                _KindLabel(s.subverterSection),
+                const SizedBox(height: 10),
+                for (final mod in gameDlls) ...[
+                  _ModTile(
+                    mod: mod,
+                    title: mod.name.isEmpty ? mod.fileName : mod.name,
+                    subtitle: _gameSubtitle(
+                      s,
+                      mod,
+                      controller.subverterEnabled.contains(mod.path),
+                    ),
+                    enabled: controller.subverterEnabled.contains(mod.path),
+                    controller: controller,
+                    onToggle: () => controller.toggleSubverter(mod.path),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
             ],
+            if (packs.isNotEmpty) ...[
+              _KindLabel(s.resPacksSection),
+              const SizedBox(height: 10),
+              for (final pack in packs) ...[
+                _ResPackTile(
+                  pack: pack,
+                  enabled: controller.resPacksEnabled.contains(pack.dirName),
+                  onToggle: () => controller.toggleResPack(pack.dirName),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+            _DumperCard(controller: controller),
           ],
         );
       },
@@ -196,6 +179,9 @@ class _ModsScreenState extends State<ModsScreen> {
 
   String _dllSubtitle(S s, ModEntry mod, bool enabled) {
     final parts = <String?>[];
+    if (mod.preload) {
+      parts.add(s.preloadBadge);
+    }
     if (mod.version.isNotEmpty) {
       parts.add('v${mod.version}');
     }
@@ -205,6 +191,132 @@ class _ModsScreenState extends State<ModsScreen> {
     return parts
         .where((value) => value != null && value.isNotEmpty)
         .join(' · ');
+  }
+
+  String _gameSubtitle(S s, ModEntry mod, bool enabled) {
+    final parts = <String?>[
+      s.gameModLabel,
+      if (mod.version.isNotEmpty) 'v${mod.version}',
+      mod.sizeLabel(s),
+      enabled ? s.modEnabled : s.modDisabled,
+    ];
+    return parts
+        .where((value) => value != null && value.isNotEmpty)
+        .join(' · ');
+  }
+}
+
+class _HowItWorksCard extends StatelessWidget {
+  const _HowItWorksCard({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final s = S.of(context);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.extension, size: 20, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(s.howItWorks, style: theme.textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.zipHowText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.dllHowText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.subverterHowText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.respackHowText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            s.dumperHowText,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SelectableText(
+            controller.modsPath.isEmpty ? '…' : controller.modsPath,
+            style: theme.textTheme.bodySmall,
+          ),
+          if (controller.resPacksPath.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              controller.resPacksPath,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: controller.modsPath.isEmpty
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await controller.openModsDir();
+                        messenger.showSnackBar(illusioSnackBar(s.folderOpened));
+                      },
+                icon: const Icon(Icons.folder_open, size: 20),
+                label: Text(s.openFolder),
+              ),
+              OutlinedButton.icon(
+                onPressed: controller.resPacksPath.isEmpty
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await controller.openResPacksDir();
+                        messenger.showSnackBar(illusioSnackBar(s.folderOpened));
+                      },
+                icon: const Icon(Icons.palette_outlined, size: 20),
+                label: Text(s.openResPacks),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => controller.loadMods(),
+                icon: const Icon(Icons.refresh, size: 20),
+                label: Text(s.refresh),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -218,9 +330,9 @@ class _KindLabel extends StatelessWidget {
     return Text(
       text,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            letterSpacing: 0.4,
-          ),
+        color: Theme.of(context).colorScheme.primary,
+        letterSpacing: 0.4,
+      ),
     );
   }
 }
@@ -269,7 +381,9 @@ class _ModTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              mod.isDll
+              mod.isGameMod
+                  ? Icons.sports_esports_outlined
+                  : mod.isDll
                   ? Icons.memory_outlined
                   : Icons.inventory_2_outlined,
               size: 20,
@@ -290,15 +404,180 @@ class _ModTile extends StatelessWidget {
                 ),
                 Text(
                   subtitle,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: enabled, onChanged: (_) => onToggle()),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResPackTile extends StatelessWidget {
+  const _ResPackTile({
+    required this.pack,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final ResPackEntry pack;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final s = S.of(context);
+    final subtitle = <String>[
+      if (pack.valid && pack.target.isNotEmpty) s.resPackTarget(pack.target),
+      if (pack.valid) s.resPackFiles(pack.files),
+      pack.sizeLabel(s),
+      if (!pack.valid) s.resPackInvalid,
+      enabled ? s.modEnabled : s.modDisabled,
+    ].join(' · ');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: enabled
+            ? scheme.tertiaryContainer.withValues(alpha: 0.45)
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: enabled ? scheme.tertiary : scheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: enabled
+                  ? scheme.tertiaryContainer
+                  : scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              pack.valid
+                  ? Icons.texture_outlined
+                  : Icons.warning_amber_outlined,
+              size: 20,
+              color: enabled
+                  ? scheme.onTertiaryContainer
+                  : scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pack.valid && pack.name.isNotEmpty ? pack.name : pack.dirName,
+                  style: theme.textTheme.titleMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (pack.description.isNotEmpty)
+                  Text(
+                    pack.description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
           ),
           Switch(
             value: enabled,
-            onChanged: (_) => onToggle(),
+            onChanged: pack.valid ? (_) => onToggle() : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DumperCard extends StatelessWidget {
+  const _DumperCard({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final s = S.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: controller.dumpResources
+            ? scheme.errorContainer.withValues(alpha: 0.4)
+            : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: controller.dumpResources
+              ? scheme.error
+              : scheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: controller.dumpResources
+                  ? scheme.errorContainer
+                  : scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              Icons.unarchive_outlined,
+              size: 20,
+              color: controller.dumpResources
+                  ? scheme.onErrorContainer
+                  : scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.dumperSection, style: theme.textTheme.titleMedium),
+                Text(
+                  controller.dumpResources ? s.dumperOn : s.dumperOff,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: s.openDumps,
+            onPressed: controller.dumpsPath.isEmpty
+                ? null
+                : () => controller.openDumpsDir(),
+            icon: const Icon(Icons.folder_open, size: 20),
+          ),
+          Switch(
+            value: controller.dumpResources,
+            onChanged: (value) => controller.setDumpResources(value),
           ),
         ],
       ),

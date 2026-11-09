@@ -28,8 +28,9 @@ class S {
   String get play => ru ? 'Играть' : 'Play';
   String get launchReplay => ru ? 'Запустить реплей' : 'Watch replay';
   String get replayTypeLabel => ru ? 'реплеи' : 'replays';
-  String get needZipBundle =>
-      ru ? 'нужен zip-архив content bundle' : 'a content bundle zip archive is required';
+  String get needZipBundle => ru
+      ? 'нужен zip-архив content bundle'
+      : 'a content bundle zip archive is required';
   String get launchingReplay => ru ? 'Запуск реплея' : 'Replay playback';
   String get favorites => ru ? 'Избранное' : 'Favorites';
   String get add => ru ? 'Добавить' : 'Add';
@@ -43,17 +44,21 @@ class S {
   String get save => ru ? 'Сохранить' : 'Save';
   String get raiseTop => ru ? 'Поднять наверх' : 'Move to top';
   String get edit => ru ? 'Изменить' : 'Edit';
-  String get removeFavorite => ru ? 'Убрать из избранного' : 'Remove from favorites';
+  String get removeFavorite =>
+      ru ? 'Убрать из избранного' : 'Remove from favorites';
   String get addFavorite => ru ? 'В избранное' : 'Add to favorites';
-  String get emptyFavoritesTitle => ru ? 'Здесь пока пусто' : 'Nothing here yet';
+  String get emptyFavoritesTitle =>
+      ru ? 'Здесь пока пусто' : 'Nothing here yet';
   String get emptyFavoritesHint => ru
       ? 'Добавьте первый сервер или найдите его на вкладке «Сервера».'
       : 'Add your first server or find one on the Servers tab.';
   String get connecting => ru ? 'Подключение' : 'Connecting';
   String get clientStarted => ru ? 'Клиент запущен' : 'Client started';
-  String get connectFailed => ru ? 'не удалось подключиться' : 'failed to connect';
+  String get connectFailed =>
+      ru ? 'не удалось подключиться' : 'failed to connect';
   String get hide => ru ? 'Скрыть' : 'Hide';
-  String get privacyTitle => ru ? 'Политика конфиденциальности' : 'Privacy policy';
+  String get privacyTitle =>
+      ru ? 'Политика конфиденциальности' : 'Privacy policy';
   String privacyBody(String name) => ru
       ? 'Сервер «$name» требует принять свою политику конфиденциальности перед подключением.'
       : 'The server "$name" requires accepting its privacy policy before connecting.';
@@ -66,7 +71,8 @@ class S {
   String get serversSubtitle =>
       ru ? 'живой список хаба и фильтры' : 'live hub list and filters';
   String get search => ru ? 'Поиск' : 'Search';
-  String get searchHint => ru ? 'имя или адрес сервера' : 'server name or address';
+  String get searchHint =>
+      ru ? 'имя или адрес сервера' : 'server name or address';
   String get refresh => ru ? 'Обновить' : 'Refresh';
   String get retry => ru ? 'Повторить' : 'Retry';
   String get filters => ru ? 'Фильтры' : 'Filters';
@@ -78,8 +84,10 @@ class S {
       : 'within a category filters combine with "or", across categories — "and"';
   String get playersFrom => ru ? 'Игроков от' : 'Players from';
   String get playersTo => ru ? 'Игроков до' : 'Players to';
-  String get hideFullServers => ru ? 'Скрывать полные сервера' : 'Hide full servers';
-  String get loadingList => ru ? 'Получаем список серверов' : 'Fetching server list';
+  String get hideFullServers =>
+      ru ? 'Скрывать полные сервера' : 'Hide full servers';
+  String get loadingList =>
+      ru ? 'Получаем список серверов' : 'Fetching server list';
   String get hubUnavailable => ru ? 'Хаб недоступен' : 'Hub unavailable';
   String get listNotUpdated => ru ? 'список не обновлён' : 'list not refreshed';
   String get connect => ru ? 'Подключиться' : 'Connect';
@@ -92,11 +100,11 @@ class S {
       : '$visible of $total servers · $online players online';
   String playersOf(int count, int max) => ru
       ? max <= 0
-          ? '$count ${_playersWord(count)}'
-          : '$count / $max ${_playersWord(max)}'
+            ? '$count ${_playersWord(count)}'
+            : '$count / $max ${_playersWord(max)}'
       : max <= 0
-          ? '$count players'
-          : '$count / $max players';
+      ? '$count players'
+      : '$count / $max players';
   String get round => ru ? 'Раунд' : 'Round';
   String get inRound => ru ? 'В раунде' : 'In round';
   String get afterRound => ru ? 'После раунда' : 'After round';
@@ -109,10 +117,12 @@ class S {
   String get rpLow => ru ? 'лёгкий' : 'light';
   String get rpMedium => ru ? 'средний' : 'medium';
   String get rpHigh => ru ? 'тяжёлый' : 'heavy';
-  String detailsFailed(String error) =>
-      ru ? 'Не удалось получить описание: $error' : 'Failed to load description: $error';
-  String infoFailed(String error) =>
-      ru ? 'не удалось получить /info: $error' : 'failed to fetch /info: $error';
+  String detailsFailed(String error) => ru
+      ? 'Не удалось получить описание: $error'
+      : 'Failed to load description: $error';
+  String infoFailed(String error) => ru
+      ? 'не удалось получить /info: $error'
+      : 'failed to fetch /info: $error';
 
   static const regionNames = {
     'eu_west': 'Европа (запад)',
@@ -164,14 +174,18 @@ class S {
   String get themeEmeraldDusk => ru ? 'Изумрудные сумерки' : 'Emerald dusk';
   String get themeCopperNight => ru ? 'Медная ночь' : 'Copper night';
   String get languageLabel => ru ? 'Язык' : 'Language';
-  String get languageHint => ru ? 'интерфейс приложения и подписи' : 'app interface and labels';
+  String get languageHint =>
+      ru ? 'интерфейс приложения и подписи' : 'app interface and labels';
   String get gameSection => ru ? 'Игра' : 'Game';
   String get fullscreen => ru ? 'Полноэкранный режим' : 'Fullscreen';
   String get serverListSection => ru ? 'Список серверов' : 'Server list';
-  String get hideEmptyServers => ru ? 'Скрывать пустые сервера' : 'Hide empty servers';
-  String get hideEmptyHint =>
-      ru ? 'сервера без игроков не отображаются' : 'servers without players are hidden';
-  String get hideFullHint => ru ? 'у них заняты все слоты' : 'all slots are taken';
+  String get hideEmptyServers =>
+      ru ? 'Скрывать пустые сервера' : 'Hide empty servers';
+  String get hideEmptyHint => ru
+      ? 'сервера без игроков не отображаются'
+      : 'servers without players are hidden';
+  String get hideFullHint =>
+      ru ? 'у них заняты все слоты' : 'all slots are taken';
   String get hubs => ru ? 'Хабы' : 'Hubs';
   String get hubsHint => ru
       ? 'основной хаб SS14 подключён всегда, ниже — дополнительные'
@@ -186,26 +200,29 @@ class S {
       : 'defaults to the system data directory';
   String get launchArgs => ru ? 'Аргументы запуска' : 'Launch arguments';
   String get engineOverride => ru ? 'Свой движок (zip)' : 'Custom engine (zip)';
-  String get engineOverrideHint =>
-      ru ? 'путь к архиву движка вместо CDN' : 'path to an engine archive instead of the CDN';
+  String get engineOverrideHint => ru
+      ? 'путь к архиву движка вместо CDN'
+      : 'path to an engine archive instead of the CDN';
   String get clientLogs => ru ? 'Логи клиента' : 'Client logs';
   String get clientLogsHint => ru
       ? 'stdout и stderr пишутся в каталог logs'
       : 'stdout and stderr go to the logs directory';
-  String get clientSaved => ru ? 'Настройки клиента сохранены' : 'Client settings saved';
+  String get clientSaved =>
+      ru ? 'Настройки клиента сохранены' : 'Client settings saved';
   String get accountSection => ru ? 'Аккаунт' : 'Account';
   String get guest => ru ? 'Гость' : 'Guest';
   String get guestName => ru ? 'Имя гостя' : 'Guest name';
-  String get guestNameHint =>
-      ru ? 'под каким именем заходить без аккаунта' : 'the name used without an account';
+  String get guestNameHint => ru
+      ? 'под каким именем заходить без аккаунта'
+      : 'the name used without an account';
   String get overrideName => ru ? 'Подменить имя' : 'Override name';
   String get overrideNameHint =>
       ru ? 'имя вместо логина аккаунта' : 'a name instead of the account login';
-  String get accountSaved => ru ? 'Настройки аккаунта сохранены' : 'Account settings saved';
+  String get accountSaved =>
+      ru ? 'Настройки аккаунта сохранены' : 'Account settings saved';
   String get manageAccounts => ru ? 'Управление аккаунтами' : 'Manage accounts';
-  String accountsHintSignedInOf(int n) => ru
-      ? '$n сохранённых аккаунтов'
-      : '$n saved account${n == 1 ? '' : 's'}';
+  String accountsHintSignedInOf(int n) =>
+      ru ? '$n сохранённых аккаунтов' : '$n saved account${n == 1 ? '' : 's'}';
   String get accountHintGuest => ru
       ? 'войдите, чтобы играть на серверах с аутентификацией'
       : 'sign in to play on servers with authentication';
@@ -216,8 +233,10 @@ class S {
   String get modsDirOpen => ru ? 'Каталог модов' : 'Mods directory';
   String get logsDirOpen => ru ? 'Каталог логов' : 'Logs directory';
   String get clearCache => ru ? 'Очистить кэш' : 'Clear cache';
-  String get cacheCleared => ru ? 'Кэш загрузок очищен' : 'Download cache cleared';
-  String get cacheFailed => ru ? 'Не удалось очистить кэш' : 'Failed to clear cache';
+  String get cacheCleared =>
+      ru ? 'Кэш загрузок очищен' : 'Download cache cleared';
+  String get cacheFailed =>
+      ru ? 'Не удалось очистить кэш' : 'Failed to clear cache';
   String get coreLabel => ru ? 'ядро' : 'core';
 
   String get proxySection => ru ? 'Прокси' : 'Proxy';
@@ -234,10 +253,13 @@ class S {
   String get proxyNoProfiles => ru
       ? 'профилей пока нет — добавьте первый'
       : 'no profiles yet — add the first one';
-  String get proxyEnable => ru ? 'Прокси для лаунчера' : 'Proxy for the launcher';
-  String get proxyEnableHint =>
-      ru ? 'весь трафик лаунчера идёт через SOCKS5' : 'all launcher traffic goes through SOCKS5';
-  String get proxyUpdatesEnable => ru ? 'Прокси для обновлений' : 'Proxy for updates';
+  String get proxyEnable =>
+      ru ? 'Прокси для лаунчера' : 'Proxy for the launcher';
+  String get proxyEnableHint => ru
+      ? 'весь трафик лаунчера идёт через SOCKS5'
+      : 'all launcher traffic goes through SOCKS5';
+  String get proxyUpdatesEnable =>
+      ru ? 'Прокси для обновлений' : 'Proxy for updates';
   String get proxyUpdatesHint => ru
       ? 'launcher-data и GitHub идут через SOCKS5'
       : 'launcher-data and GitHub go through SOCKS5';
@@ -255,17 +277,20 @@ class S {
   String get proxyUdpHint => ru
       ? 'игровой трафик идёт через UDP ASSOCIATE прокси'
       : 'game traffic goes through the proxy UDP ASSOCIATE';
-  String get proxyApply => ru ? 'Прокси для клиента игры' : 'Proxy for the game client';
+  String get proxyApply =>
+      ru ? 'Прокси для клиента игры' : 'Proxy for the game client';
   String get proxyApplyHint => ru
       ? 'переменные ALL_PROXY и HTTP_PROXY передаются игре'
       : 'ALL_PROXY and HTTP_PROXY variables are passed to the game';
   String get proxyTest => ru ? 'Проверить' : 'Test';
   String get proxyTesting => ru ? 'Проверяем…' : 'Testing…';
-  String proxyOk(int rtt) => ru ? 'прокси работает, $rtt мс' : 'proxy works, $rtt ms';
+  String proxyOk(int rtt) =>
+      ru ? 'прокси работает, $rtt мс' : 'proxy works, $rtt ms';
   String proxyOkUdp(int rtt) => ru
       ? 'прокси работает, $rtt мс, UDP доступен'
       : 'proxy works, $rtt ms, UDP available';
-  String get proxySaved => ru ? 'Настройки прокси сохранены' : 'Proxy settings saved';
+  String get proxySaved =>
+      ru ? 'Настройки прокси сохранены' : 'Proxy settings saved';
   String get proxyNoUdp => ru
       ? 'прокси работает, но UDP не поддерживается'
       : 'proxy works but UDP is not supported';
@@ -304,7 +329,8 @@ class S {
   String get autoUpdateHint => ru
       ? 'скачивать новые версии при запуске'
       : 'download new versions at startup';
-  String get prefetchLabel => ru ? 'Предзагрузка избранного' : 'Prefetch favorites';
+  String get prefetchLabel =>
+      ru ? 'Предзагрузка избранного' : 'Prefetch favorites';
   String get prefetchHint => ru
       ? 'обновлять сборки избранных серверов в фоне'
       : 'keep favorite server builds up to date in background';
@@ -314,7 +340,8 @@ class S {
   String get patchHwidHint => ru
       ? 'случайный идентификатор железа при каждом запуске клиента'
       : 'random hardware id on every client launch';
-  String get patchRpcLabel => ru ? 'Отключить Discord RPC' : 'Disable Discord RPC';
+  String get patchRpcLabel =>
+      ru ? 'Отключить Discord RPC' : 'Disable Discord RPC';
   String get patchRpcHint => ru
       ? 'клиент не пишет статус в Discord'
       : 'the client stops updating Discord presence';
@@ -330,8 +357,8 @@ class S {
 
   String get modsTitle => mods;
   String get modsSubtitle => ru
-      ? 'ZIP-оверлеи и DLL-патчи из каталога модов'
-      : 'ZIP overlays and DLL patches from the mods directory';
+      ? 'ZIP-оверлеи, DLL-патчи, игровые моды и ресурс-паки'
+      : 'ZIP overlays, DLL patches, game mods and resource packs';
   String modsCountLine(int total, int enabled) => ru
       ? '$total ${_filesWord(total)} · $enabled включено'
       : '$total file${total == 1 ? '' : 's'} · $enabled enabled';
@@ -348,8 +375,17 @@ class S {
       ? 'Положите ZIP-архивы в каталог модов и включите нужные. Они монтируются в клиент как оверлей при запуске. Отключение вернёт оригинальные ресурсы.'
       : 'Drop ZIP archives into the mods directory and enable the ones you need. They mount into the client as an overlay on launch. Disabling restores original resources.';
   String get dllHowText => ru
-      ? 'DLL-сборки с классом IllusioMod применяются к клиенту через Harmony: статический метод Patch(Harmony) вызывается при запуске. Отключённые сборки не загружаются вовсе.'
-      : 'DLL builds with an IllusioMod class are applied to the client through Harmony: the static Patch(Harmony) method is invoked at launch. Disabled builds are not loaded at all.';
+      ? 'DLL-сборки с классом IllusioMod применяются к клиенту через Harmony: статический метод Patch(Harmony) вызывается при запуске. Поле public static bool Preload = true применяет патчи до загрузки движка. Отключённые сборки не загружаются вовсе.'
+      : 'DLL builds with an IllusioMod class are applied to the client through Harmony: the static Patch(Harmony) method is invoked at launch. A public static bool Preload = true field applies patches before the engine boots. Disabled builds are not loaded at all.';
+  String get subverterHowText => ru
+      ? 'Игровые моды без класса IllusioMod подгружаются через ModLoader движка — как моды самого сервера. Они видят игровые системы и не нуждаются в Harmony.'
+      : 'Game mods without an IllusioMod class are sideloaded through the engine ModLoader — just like server-side mods. They see game systems and do not need Harmony.';
+  String get respackHowText => ru
+      ? 'Ресурс-паки — папки с meta.json (поля Name, Description, Target) и файлами, повторяющими пути контента: /Textures, /Audio и так далее. Включённые файлы подменяют оригиналы по путям.'
+      : 'Resource packs are folders with a meta.json (Name, Description, Target fields) and files mirroring content paths: /Textures, /Audio and so on. Enabled files replace the originals by path.';
+  String get dumperHowText => ru
+      ? 'Дампер выгружает весь контент сервера в папку dumps при следующем подключении — готовая заготовка ресурс-пака для вашего форка.'
+      : 'The dumper exports all server content into the dumps folder on next connect — a ready-made resource pack stub for your fork.';
   String get openFolder => ru ? 'Открыть папку' : 'Open folder';
   String get folderOpened => ru
       ? 'Каталог открыт — положите файлы туда'
@@ -360,11 +396,35 @@ class S {
       : 'Download a mod, open the mods directory, drop the file there and press "Refresh".';
   String get zipSection => ru ? 'ZIP-оверлеи' : 'ZIP overlays';
   String get dllSection => ru ? 'DLL-патчи' : 'DLL patches';
+  String get subverterSection =>
+      ru ? 'Игровые моды (Subverter)' : 'Game mods (Subverter)';
+  String get resPacksSection => ru ? 'Ресурс-паки' : 'Resource packs';
+  String get dumperSection => ru ? 'Дампер ресурсов' : 'Resource dumper';
   String get modEnabled => ru ? 'включён' : 'enabled';
   String get modDisabled => ru ? 'выключен' : 'disabled';
   String get dllNoMarker => ru
-      ? 'без класса IllusioMod — загружен не будет'
-      : 'no IllusioMod class — it will not be loaded';
+      ? 'без класса IllusioMod — будет сайдлоаден как игровой мод'
+      : 'no IllusioMod class — will be sideloaded as a game mod';
+  String get preloadBadge => ru ? 'препатч' : 'preload';
+  String get gameModLabel => ru ? 'игровой мод' : 'game mod';
+  String resPackTarget(String target) =>
+      ru ? 'форк: $target' : 'target: $target';
+  String resPackFiles(int count) => ru
+      ? '$count ${_filesWord(count)}'
+      : '$count file${count == 1 ? '' : 's'}';
+  String get resPackInvalid =>
+      ru ? 'нет или битый meta.json' : 'missing or broken meta.json';
+  String get resPacksEmpty => ru
+      ? 'Создайте папку пакета в каталоге respacks и положите туда meta.json с полями Name, Description, Target и файлы контента.'
+      : 'Create a pack folder inside the respacks directory and put a meta.json with Name, Description, Target fields plus content files there.';
+  String get dumperOn => ru
+      ? 'Весь контент сервера будет выгружен при следующем подключении'
+      : 'All server content will be dumped on next connect';
+  String get dumperOff => ru
+      ? 'Выгрузка выключена — включите перед подключением к серверу'
+      : 'Dumping is off — enable it before connecting to a server';
+  String get openDumps => ru ? 'Открыть dumps' : 'Open dumps';
+  String get openResPacks => ru ? 'Открыть respacks' : 'Open respacks';
 
   String get loginTitle => ru ? 'Вход в аккаунт SS14' : 'SS14 account sign-in';
   String get loginHint => ru
@@ -372,8 +432,9 @@ class S {
       : 'The same account as on spacestation14.io';
   String get username => ru ? 'Логин' : 'Username';
   String get password => ru ? 'Пароль' : 'Password';
-  String get tfaCode =>
-      ru ? 'Код двухфакторной аутентификации' : 'Two-factor authentication code';
+  String get tfaCode => ru
+      ? 'Код двухфакторной аутентификации'
+      : 'Two-factor authentication code';
   String get login => ru ? 'Войти' : 'Sign in';
   String get back => ru ? 'Назад' : 'Back';
   String get forgotPassword => ru ? 'Забыли пароль?' : 'Forgot password?';
@@ -393,13 +454,16 @@ class S {
   String get savedAccount => ru ? 'сохранённый аккаунт' : 'saved account';
   String get loggedOut => ru ? 'Вы вышли из аккаунта' : 'You signed out';
   String get logout => ru ? 'Выйти' : 'Sign out';
-  String sessionUntil(String time) => ru ? 'Сессия до $time' : 'Session until $time';
-  String accountSwitched(String name) => ru ? 'Аккаунт: $name' : 'Account: $name';
+  String sessionUntil(String time) =>
+      ru ? 'Сессия до $time' : 'Session until $time';
+  String accountSwitched(String name) =>
+      ru ? 'Аккаунт: $name' : 'Account: $name';
 
   String get blockedTitle => ru
       ? 'Illusio больше не может запускать игру'
       : 'Illusio can no longer run the game';
-  String get openReleases => ru ? 'Открыть страницу релизов' : 'Open releases page';
+  String get openReleases =>
+      ru ? 'Открыть страницу релизов' : 'Open releases page';
   String get outdatedVersion => ru ? 'версия устарела' : 'version outdated';
 
   String get phaseServerData =>
@@ -413,7 +477,8 @@ class S {
   String get authIncomplete => ru
       ? 'сервер авторизации вернул неполный ответ'
       : 'the auth server returned an incomplete response';
-  String get authFailed => ru ? 'авторизация не удалась' : 'authentication failed';
+  String get authFailed =>
+      ru ? 'авторизация не удалась' : 'authentication failed';
   String get downloadStartFailed =>
       ru ? 'не удалось начать загрузку' : 'failed to start download';
   String get connectBusy =>

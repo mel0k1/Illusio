@@ -12,6 +12,8 @@ pub struct ModEntry {
     pub name: String,
     pub description: String,
     pub version: String,
+    pub game: bool,
+    pub preload: bool,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -24,6 +26,10 @@ pub struct DllMeta {
     pub description: String,
     #[serde(default)]
     pub version: String,
+    #[serde(default)]
+    pub game: bool,
+    #[serde(default)]
+    pub preload: bool,
 }
 
 pub fn ensure_dir(path: &Path) -> Result<PathBuf, String> {
@@ -96,6 +102,8 @@ pub fn scan_mods(dir: &Path, metadata: &[DllMeta]) -> Result<Vec<ModEntry>, Stri
                 .map(|meta| meta.version.clone())
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_default(),
+            game: meta.map(|meta| meta.game).unwrap_or(false),
+            preload: meta.map(|meta| meta.preload).unwrap_or(false),
         });
     }
     mods.sort_by(|left, right| left.file_name.cmp(&right.file_name));
@@ -141,6 +149,7 @@ mod tests {
             name: "Half Life".into(),
             description: "раз".into(),
             version: "1.0".into(),
+            ..DllMeta::default()
         }];
         let mods = scan_mods(&dir, &metadata).unwrap();
         assert_eq!(mods.len(), 3);

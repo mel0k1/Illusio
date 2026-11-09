@@ -140,6 +140,8 @@ class ModEntry {
     required this.name,
     required this.description,
     required this.version,
+    this.game = false,
+    this.preload = false,
   });
 
   final String fileName;
@@ -149,8 +151,12 @@ class ModEntry {
   final String name;
   final String description;
   final String version;
+  final bool game;
+  final bool preload;
 
   bool get isDll => kind == 'dll';
+
+  bool get isGameMod => isDll && game;
 
   static ModEntry fromMap(Object? raw) {
     if (raw is! Map) {
@@ -172,6 +178,57 @@ class ModEntry {
       name: raw['name']?.toString() ?? '',
       description: raw['description']?.toString() ?? '',
       version: raw['version']?.toString() ?? '',
+      game: raw['game'] == true,
+      preload: raw['preload'] == true,
+    );
+  }
+
+  String sizeLabel(S s) => s.formatBytes(size);
+}
+
+class ResPackEntry {
+  const ResPackEntry({
+    required this.dirName,
+    required this.path,
+    required this.name,
+    required this.description,
+    required this.target,
+    required this.files,
+    required this.size,
+    required this.valid,
+  });
+
+  final String dirName;
+  final String path;
+  final String name;
+  final String description;
+  final String target;
+  final int files;
+  final int size;
+  final bool valid;
+
+  static ResPackEntry fromMap(Object? raw) {
+    if (raw is! Map) {
+      return const ResPackEntry(
+        dirName: '',
+        path: '',
+        name: '',
+        description: '',
+        target: '',
+        files: 0,
+        size: 0,
+        valid: false,
+      );
+    }
+    return ResPackEntry(
+      dirName: raw['dir_name']?.toString() ?? '',
+      path: raw['path']?.toString() ?? '',
+      name: raw['name']?.toString() ?? '',
+      description: raw['description']?.toString() ?? '',
+      target: raw['target']?.toString() ?? '',
+      files: (raw['files'] as num?)?.toInt() ?? 0,
+      size: (raw['size'] as num?)?.toInt() ?? 0,
+      valid: raw['valid'] == true,
     );
   }
 

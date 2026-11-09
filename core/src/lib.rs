@@ -9,6 +9,7 @@ pub mod http;
 pub mod hub;
 pub mod install;
 mod launch;
+pub mod packs;
 pub mod remote;
 pub mod socks;
 pub mod status;
@@ -492,6 +493,58 @@ pub extern "C" fn illusio_mods_dir() -> *mut c_char {
             "error": "каталог конфигурации не найден",
         })
         .to_string(),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_res_packs_dir() -> *mut c_char {
+    guarded(|| match config::res_packs_dir() {
+        Some(path) => serde_json::json!({
+            "ok": true,
+            "path": path.display().to_string(),
+        })
+        .to_string(),
+        None => serde_json::json!({
+            "ok": false,
+            "error": "каталог конфигурации не найден",
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_dumps_dir() -> *mut c_char {
+    guarded(|| match config::dumps_dir() {
+        Some(path) => serde_json::json!({
+            "ok": true,
+            "path": path.display().to_string(),
+        })
+        .to_string(),
+        None => serde_json::json!({
+            "ok": false,
+            "error": "каталог конфигурации не найден",
+        })
+        .to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_list_packs(raw: *const c_char) -> *mut c_char {
+    guarded(|| {
+        let dir = PathBuf::from(read_ptr(raw).trim());
+        match sys::ensure_dir(&dir) {
+            Ok(_) => serde_json::json!({
+                "ok": true,
+                "packs": packs::list_packs(&dir),
+                "path": dir.display().to_string(),
+            })
+            .to_string(),
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message,
+            })
+            .to_string(),
+        }
     })
 }
 

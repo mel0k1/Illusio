@@ -16,9 +16,7 @@ import '../models/server_status.dart';
 import '../version.dart';
 
 class AppController extends ChangeNotifier {
-  AppController()
-      : favorites = [],
-        accounts = [] {
+  AppController() : favorites = [], accounts = [] {
     ready = _loadConfig();
   }
 
@@ -81,9 +79,15 @@ class AppController extends ChangeNotifier {
 
   final List<String> modsEnabled = [];
   final List<String> dllModsEnabled = [];
+  final List<String> subverterEnabled = [];
+  final List<String> resPacksEnabled = [];
   List<ModEntry> mods = [];
+  List<ResPackEntry> resPacks = [];
   String modsPath = '';
+  String resPacksPath = '';
+  String dumpsPath = '';
   String logsPath = '';
+  bool dumpResources = false;
 
   List<HubServer> hubServers = [];
   bool hubLoading = false;
@@ -146,8 +150,9 @@ class AppController extends ChangeNotifier {
       modsEnabled
         ..clear()
         ..addAll(
-          ((config['mods_enabled'] as List?) ?? const [])
-              .map((value) => value.toString()),
+          ((config['mods_enabled'] as List?) ?? const []).map(
+            (value) => value.toString(),
+          ),
         );
       hubs = ((config['hubs'] as List?) ?? const [])
           .map((value) => value.toString())
@@ -163,10 +168,12 @@ class AppController extends ChangeNotifier {
       filterMaxPlayers = (config['filter_max_players'] as num?)?.toInt() ?? 0;
       acceptedPrivacy = ((config['accepted_privacy'] as List?) ?? const [])
           .whereType<Map>()
-          .map((entry) => {
-                'identifier': entry['identifier']?.toString() ?? '',
-                'version': entry['version']?.toString() ?? '',
-              })
+          .map(
+            (entry) => {
+              'identifier': entry['identifier']?.toString() ?? '',
+              'version': entry['version']?.toString() ?? '',
+            },
+          )
           .toList();
       proxyEnabled = config['proxy_enabled'] == true;
       proxyUpdates = config['proxy_updates'] == true;
@@ -190,9 +197,25 @@ class AppController extends ChangeNotifier {
       dllModsEnabled
         ..clear()
         ..addAll(
-          ((config['dll_mods_enabled'] as List?) ?? const [])
-              .map((value) => value.toString()),
+          ((config['dll_mods_enabled'] as List?) ?? const []).map(
+            (value) => value.toString(),
+          ),
         );
+      subverterEnabled
+        ..clear()
+        ..addAll(
+          ((config['subverter_enabled'] as List?) ?? const []).map(
+            (value) => value.toString(),
+          ),
+        );
+      resPacksEnabled
+        ..clear()
+        ..addAll(
+          ((config['res_packs_enabled'] as List?) ?? const []).map(
+            (value) => value.toString(),
+          ),
+        );
+      dumpResources = config['dump_resources'] == true;
       if (login != null &&
           login!.token.isNotEmpty &&
           !_accountsContain(login!)) {
@@ -240,8 +263,9 @@ class AppController extends ChangeNotifier {
 
   Future<bool> _refreshOne(LoginInfo account) async {
     final payload = jsonEncode({
-      'auth_url':
-          account.authServer.isEmpty ? Core.defaultAuthUrl : account.authServer,
+      'auth_url': account.authServer.isEmpty
+          ? Core.defaultAuthUrl
+          : account.authServer,
       'username': account.username,
       'user_id': account.userId,
       'token': account.token,
@@ -268,7 +292,9 @@ class AppController extends ChangeNotifier {
 
   Future<void> ensureFreshLogin() async {
     final current = login;
-    if (current == null || current.token.isEmpty || !_tokenExpiringSoon(current)) {
+    if (current == null ||
+        current.token.isEmpty ||
+        !_tokenExpiringSoon(current)) {
       return;
     }
     await _refreshOne(current);
@@ -320,8 +346,7 @@ class AppController extends ChangeNotifier {
     proxyUnavailable = false;
     proxySessionOff = true;
     notifyListeners();
-    await Isolate.run(
-        () => Core.proxySession(jsonEncode({'enabled': false})));
+    await Isolate.run(() => Core.proxySession(jsonEncode({'enabled': false})));
   }
 
   Future<void> resumeProxySession() async {
@@ -330,8 +355,7 @@ class AppController extends ChangeNotifier {
     }
     proxySessionOff = false;
     notifyListeners();
-    await Isolate.run(
-        () => Core.proxySession(jsonEncode({'enabled': true})));
+    await Isolate.run(() => Core.proxySession(jsonEncode({'enabled': true})));
   }
 
   ProxyProfileInfo? proxyProbeTarget() {
@@ -347,6 +371,14 @@ class AppController extends ChangeNotifier {
     final modsResult = await Isolate.run(Core.modsDir);
     if (modsResult['ok'] == true) {
       modsPath = modsResult['path']?.toString() ?? '';
+    }
+    final packsResult = await Isolate.run(Core.resPacksDir);
+    if (packsResult['ok'] == true) {
+      resPacksPath = packsResult['path']?.toString() ?? '';
+    }
+    final dumpsResult = await Isolate.run(Core.dumpsDir);
+    if (dumpsResult['ok'] == true) {
+      dumpsPath = dumpsResult['path']?.toString() ?? '';
     }
     final logsResult = await Isolate.run(Core.logsDir);
     if (logsResult['ok'] == true) {
@@ -386,6 +418,9 @@ class AppController extends ChangeNotifier {
       'proxy_udp_relay': proxyUdpRelay,
       'proxy_apply_to_game': proxyApplyToGame,
       'dll_mods_enabled': dllModsEnabled,
+      'subverter_enabled': subverterEnabled,
+      'res_packs_enabled': resPacksEnabled,
+      'dump_resources': dumpResources,
       'auto_update': autoUpdate,
       'prefetch_favorites': prefetchFavorites,
       'patch_hwid': patchHwid,
@@ -454,10 +489,9 @@ class AppController extends ChangeNotifier {
           break;
         }
         final state = await Isolate.run(
-          () => Core.contentState(jsonEncode({
-                'server_url': server.url,
-                'install_dir': installDir,
-              })),
+          () => Core.contentState(
+            jsonEncode({'server_url': server.url, 'install_dir': installDir}),
+          ),
         );
         if (state['ok'] != true || state['actual'] == true) {
           continue;
@@ -573,8 +607,9 @@ class AppController extends ChangeNotifier {
       return;
     }
     final payload = jsonEncode({
-      'auth_url':
-          account.authServer.isEmpty ? Core.defaultAuthUrl : account.authServer,
+      'auth_url': account.authServer.isEmpty
+          ? Core.defaultAuthUrl
+          : account.authServer,
       'username': account.username,
       'user_id': account.userId,
       'token': account.token,
@@ -610,8 +645,9 @@ class AppController extends ChangeNotifier {
       return;
     }
     final payload = jsonEncode({
-      'auth_url':
-          current.authServer.isEmpty ? Core.defaultAuthUrl : current.authServer,
+      'auth_url': current.authServer.isEmpty
+          ? Core.defaultAuthUrl
+          : current.authServer,
       'token': current.token,
     });
     await Isolate.run(() => Core.logout(payload));
@@ -943,7 +979,9 @@ class AppController extends ChangeNotifier {
     if (isGuest) {
       login = LoginInfo(
         token: '',
-        username: value.trim().isEmpty ? (ru ? 'Гость' : 'Guest') : value.trim(),
+        username: value.trim().isEmpty
+            ? (ru ? 'Гость' : 'Guest')
+            : value.trim(),
         userId: '',
         expireTime: '',
         authServer: '',
@@ -995,10 +1033,9 @@ class AppController extends ChangeNotifier {
       return;
     }
     final result = await Isolate.run(
-      () => Core.scanMods(jsonEncode({
-            'path': modsPath,
-            'loader_dir': loaderDir,
-          })),
+      () => Core.scanMods(
+        jsonEncode({'path': modsPath, 'loader_dir': loaderDir}),
+      ),
     );
     if (result['ok'] == true) {
       mods = ((result['mods'] as List?) ?? const [])
@@ -1009,6 +1046,26 @@ class AppController extends ChangeNotifier {
       );
       dllModsEnabled.removeWhere(
         (name) => !mods.any((entry) => entry.path == name),
+      );
+      subverterEnabled.removeWhere(
+        (name) => !mods.any((entry) => entry.path == name && entry.isGameMod),
+      );
+      notifyListeners();
+    }
+    await loadResPacks();
+  }
+
+  Future<void> loadResPacks() async {
+    if (resPacksPath.isEmpty) {
+      return;
+    }
+    final result = await Isolate.run(() => Core.listPacks(resPacksPath));
+    if (result['ok'] == true) {
+      resPacks = ((result['packs'] as List?) ?? const [])
+          .map(ResPackEntry.fromMap)
+          .toList();
+      resPacksEnabled.removeWhere(
+        (name) => !resPacks.any((pack) => pack.dirName == name),
       );
       notifyListeners();
     }
@@ -1034,6 +1091,32 @@ class AppController extends ChangeNotifier {
     saveConfig();
   }
 
+  void toggleSubverter(String path) {
+    if (subverterEnabled.contains(path)) {
+      subverterEnabled.remove(path);
+    } else {
+      subverterEnabled.add(path);
+    }
+    notifyListeners();
+    saveConfig();
+  }
+
+  void toggleResPack(String dirName) {
+    if (resPacksEnabled.contains(dirName)) {
+      resPacksEnabled.remove(dirName);
+    } else {
+      resPacksEnabled.add(dirName);
+    }
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setDumpResources(bool value) {
+    dumpResources = value;
+    notifyListeners();
+    saveConfig();
+  }
+
   Future<void> openUrl(String url) async {
     await Isolate.run(() => Core.openUrl(url));
   }
@@ -1043,6 +1126,20 @@ class AppController extends ChangeNotifier {
       return;
     }
     await Isolate.run(() => Core.openPath(modsPath));
+  }
+
+  Future<void> openResPacksDir() async {
+    if (resPacksPath.isEmpty) {
+      return;
+    }
+    await Isolate.run(() => Core.openPath(resPacksPath));
+  }
+
+  Future<void> openDumpsDir() async {
+    if (dumpsPath.isEmpty) {
+      return;
+    }
+    await Isolate.run(() => Core.openPath(dumpsPath));
   }
 
   Future<void> openLogsDir() async {
@@ -1118,8 +1215,21 @@ class AppController extends ChangeNotifier {
   }
 
   List<String> enabledDllPaths() {
-    return dllModsEnabled
-        .where((path) => File(path).existsSync())
+    return dllModsEnabled.where((path) => File(path).existsSync()).toList();
+  }
+
+  List<String> enabledSubverterPaths() {
+    return subverterEnabled.where((path) => File(path).existsSync()).toList();
+  }
+
+  List<String> enabledResPackPaths() {
+    if (resPacksPath.isEmpty) {
+      return const [];
+    }
+    final separator = Platform.isWindows ? '\\' : '/';
+    return resPacksEnabled
+        .map((name) => '$resPacksPath$separator$name')
+        .where((path) => File('$path${separator}meta.json').existsSync())
         .toList();
   }
 
@@ -1147,8 +1257,9 @@ class AppController extends ChangeNotifier {
     final overrideFile =
         overrideZip.isNotEmpty && File(overrideZip).existsSync();
     final useOverride = acz && overrideFile;
-    final engineZip =
-        useOverride ? overrideZip : (acz ? downloadState.engineZip : '');
+    final engineZip = useOverride
+        ? overrideZip
+        : (acz ? downloadState.engineZip : '');
     final engineSig = useOverride ? '00' : (acz ? downloadState.engineSig : '');
     return {
       'install_dir': installDir,
@@ -1172,6 +1283,9 @@ class AppController extends ChangeNotifier {
       'engine_sig': engineSig,
       'mods': acz ? overlays : [],
       'mod_dlls': acz ? enabledDllPaths() : [],
+      'subverters': acz ? enabledSubverterPaths() : [],
+      'res_packs': acz ? enabledResPackPaths() : [],
+      'dump_resources': acz && dumpResources,
       'log_dir': logDir,
       'allow_unsigned': useOverride,
       'patch_hwid': patchHwid,
