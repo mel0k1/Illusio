@@ -210,7 +210,7 @@ class _AppShellState extends State<AppShell> {
             ),
           ],
         );
-        final onSelect = (int value) => setState(() => _index = value);
+        void select(int value) => setState(() => _index = value);
         final body = switch (side) {
           'left' => Row(
               children: [
@@ -220,7 +220,7 @@ class _AppShellState extends State<AppShell> {
                     index: _index,
                     labels: labels,
                     corners: widget.controller.corners,
-                    onSelect: onSelect,
+                    onSelect: select,
                   ),
                 ),
                 Expanded(child: content),
@@ -235,7 +235,7 @@ class _AppShellState extends State<AppShell> {
                     index: _index,
                     labels: labels,
                     corners: widget.controller.corners,
-                    onSelect: onSelect,
+                    onSelect: select,
                   ),
                 ),
               ],
@@ -253,7 +253,7 @@ class _AppShellState extends State<AppShell> {
                   index: _index,
                   labels: labels,
                   corners: widget.controller.corners,
-                  onSelect: onSelect,
+                  onSelect: select,
                 )
               : null,
         );
