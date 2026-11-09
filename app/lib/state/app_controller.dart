@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ffi/bindings.dart';
 import '../l10n/strings.dart';
+import '../models/engine_entry.dart';
 import '../models/hub_server.dart';
 import '../models/login_info.dart';
 import '../models/proxy_profile.dart';
@@ -69,6 +70,11 @@ class AppController extends ChangeNotifier {
   String hwidValue = '';
   bool hwidOptout = false;
   bool dynamicPgo = true;
+  bool backports = true;
+  bool backportsNoAny = false;
+  bool rpcFake = false;
+  String rpcFakeName = 'Illusio';
+  bool proxyGuardLaunch = true;
 
   String updateVersion = '';
   String updateNotes = '';
@@ -89,10 +95,14 @@ class AppController extends ChangeNotifier {
   final List<String> resPacksEnabled = [];
   List<ModEntry> mods = [];
   List<ResPackEntry> resPacks = [];
+  List<EngineEntry> customEngines = [];
   String modsPath = '';
   String resPacksPath = '';
   String dumpsPath = '';
   String logsPath = '';
+  String enginesPath = '';
+  bool enginesBusy = false;
+  String enginesError = '';
   bool dumpResources = false;
 
   List<HubServer> hubServers = [];
@@ -107,6 +117,10 @@ class AppController extends ChangeNotifier {
   bool connecting = false;
 
   String? pendingConnect;
+
+  bool launchGuardActive = false;
+  String launchGuardError = '';
+  GameServer? _launchGuardServer;
 
   bool get isGuest => login != null && login!.token.isEmpty;
 
@@ -205,6 +219,11 @@ class AppController extends ChangeNotifier {
       hwidValue = config['hwid_value']?.toString() ?? '';
       hwidOptout = config['hwid_optout'] == true;
       dynamicPgo = config['dynamic_pgo'] != false;
+      backports = config['backports'] != false;
+      backportsNoAny = config['backports_no_any'] == true;
+      rpcFake = config['rpc_fake'] == true;
+      rpcFakeName = config['rpc_fake_name']?.toString() ?? 'Illusio';
+      proxyGuardLaunch = config['proxy_guard_launch'] != false;
       dllModsEnabled
         ..clear()
         ..addAll(
@@ -396,6 +415,81 @@ class AppController extends ChangeNotifier {
     if (logsResult['ok'] == true) {
       logsPath = logsResult['path']?.toString() ?? '';
     }
+    await reloadEngines();
+  }
+
+  Future<void> reloadEngines() async {
+    final result = await Isolate.run(Core.enginesList);
+    if (result['ok'] == true) {
+      enginesPath = result['dir']?.toString() ?? '';
+      customEngines = ((result['engines'] as List?) ?? const [])
+          .map(EngineEntry.fromMap)
+          .toList();
+    }
+  }
+
+  String engineZipPath(EngineEntry engine) {
+    if (enginesPath.isEmpty) {
+      return '';
+    }
+    final separator = Platform.isWindows ? '\\' : '/';
+    return '$enginesPath$separator${engine.fileName}';
+  }
+
+  Future<void> importEngine(String path) async {
+    if (enginesBusy || path.trim().isEmpty) {
+      return;
+    }
+    enginesBusy = true;
+    enginesError = '';
+    notifyListeners();
+    final result = await Isolate.run(
+      () => Core.enginesImport(jsonEncode({'path': path.trim()})),
+    );
+    enginesBusy = false;
+    if (result['ok'] == true) {
+      await reloadEngines();
+      final engine = result['engine'];
+      if (engine is Map) {
+        final id = engine['id']?.toString() ?? '';
+        for (final entry in customEngines) {
+          if (entry.id == id) {
+            engineOverride = engineZipPath(entry);
+          }
+        }
+      }
+      await saveConfig();
+    } else {
+      enginesError = result['error']?.toString() ?? '';
+    }
+    notifyListeners();
+  }
+
+  Future<void> removeEngine(String id) async {
+    if (enginesBusy || id.trim().isEmpty) {
+      return;
+    }
+    enginesBusy = true;
+    enginesError = '';
+    notifyListeners();
+    final removed = customEngines
+        .where((engine) => engine.id == id.trim())
+        .toList();
+    final result = await Isolate.run(
+      () => Core.enginesRemove(jsonEncode({'id': id.trim()})),
+    );
+    enginesBusy = false;
+    if (result['ok'] == true) {
+      final zip = removed.isEmpty ? '' : engineZipPath(removed.first);
+      await reloadEngines();
+      if (zip.isNotEmpty && engineOverride == zip) {
+        engineOverride = '';
+        await saveConfig();
+      }
+    } else {
+      enginesError = result['error']?.toString() ?? '';
+    }
+    notifyListeners();
   }
 
   Future<void> saveConfig() async {
@@ -444,6 +538,11 @@ class AppController extends ChangeNotifier {
       'hwid_value': hwidValue,
       'hwid_optout': hwidOptout,
       'dynamic_pgo': dynamicPgo,
+      'backports': backports,
+      'backports_no_any': backportsNoAny,
+      'rpc_fake': rpcFake,
+      'rpc_fake_name': rpcFakeName,
+      'proxy_guard_launch': proxyGuardLaunch,
     });
     await Isolate.run(() => Core.saveConfig(payload));
   }
@@ -1384,6 +1483,10 @@ class AppController extends ChangeNotifier {
       'hwid_value': hwidMode == 'account' ? (login?.hwid ?? '') : hwidValue,
       'hwid_optout': hwidOptout,
       'dynamic_pgo': dynamicPgo,
+      'backports': backports,
+      'backports_no_any': backportsNoAny,
+      'rpc_fake': rpcFake,
+      'rpc_fake_name': rpcFakeName,
     };
   }
 
@@ -1476,7 +1579,29 @@ class AppController extends ChangeNotifier {
     return '$exeDir${separator}loader';
   }
 
+  Future<String?> _proxyGuardProbe() async {
+    if (!proxyGuardLaunch || !proxyConfigured || proxySessionOff) {
+      return null;
+    }
+    if (!proxyApplyToGame) {
+      return null;
+    }
+    final probe = await proxyProbe(proxyUdpRelay);
+    if (probe['ok'] == true) {
+      return null;
+    }
+    return probe['error']?.toString() ?? '';
+  }
+
   Future<Map<String, dynamic>> _launchAfterDownload(GameServer? server) async {
+    final guardError = await _proxyGuardProbe();
+    if (guardError != null) {
+      launchGuardError = guardError;
+      launchGuardActive = true;
+      _launchGuardServer = server;
+      notifyListeners();
+      return {'ok': false, 'error': s.proxyGuardBlocked};
+    }
     final info = downloadState.info;
     final acz = downloadState.isAcz;
     final bundle = downloadState.bundleZip;
@@ -1501,6 +1626,25 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
+  Future<void> launchGuardContinue() async {
+    final server = _launchGuardServer;
+    launchGuardActive = false;
+    launchGuardError = '';
+    _launchGuardServer = null;
+    notifyListeners();
+    await continueWithoutProxy();
+    await _launchAfterDownload(server);
+  }
+
+  Future<void> launchGuardCancel() async {
+    launchGuardActive = false;
+    launchGuardError = '';
+    _launchGuardServer = null;
+    connecting = false;
+    downloadState = DownloadStateInfo.empty;
+    notifyListeners();
+  }
+
   Future<void> launchFromDirectory() async {
     final spec = _launchSpec(
       installDir: installDir,
@@ -1511,5 +1655,30 @@ class AppController extends ChangeNotifier {
       connectAddress: '',
     );
     await Isolate.run(() => Core.launch(jsonEncode(spec)));
+  }
+
+  void setBackports(bool value) {
+    backports = value;
+    notifyListeners();
+  }
+
+  void setBackportsNoAny(bool value) {
+    backportsNoAny = value;
+    notifyListeners();
+  }
+
+  void setRpcFake(bool value) {
+    rpcFake = value;
+    notifyListeners();
+  }
+
+  void setRpcFakeName(String value) {
+    rpcFakeName = value;
+    notifyListeners();
+  }
+
+  void setProxyGuardLaunch(bool value) {
+    proxyGuardLaunch = value;
+    notifyListeners();
   }
 }

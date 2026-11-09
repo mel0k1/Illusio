@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../ffi/bindings.dart';
@@ -25,8 +26,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _launchArgs = TextEditingController();
   final TextEditingController _guest = TextEditingController();
   final TextEditingController _override = TextEditingController();
-  final TextEditingController _engineOverride = TextEditingController();
   final TextEditingController _hwid = TextEditingController();
+  final TextEditingController _rpcFakeName = TextEditingController();
   bool _proxyBusy = false;
   String _proxyResult = '';
   Color _proxyResultColor = Colors.transparent;
@@ -50,8 +51,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _launchArgs.text = controller.launchArgs.join(' ');
       _guest.text = controller.guestUsername;
       _override.text = controller.usernameOverride;
-      _engineOverride.text = controller.engineOverride;
       _hwid.text = controller.hwidValue;
+      _rpcFakeName.text = controller.rpcFakeName;
     });
     final path = await controller.configDirPath();
     if (!mounted) {
@@ -69,8 +70,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _launchArgs.dispose();
     _guest.dispose();
     _override.dispose();
-    _engineOverride.dispose();
     _hwid.dispose();
+    _rpcFakeName.dispose();
     super.dispose();
   }
 
@@ -82,7 +83,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .split(RegExp(r'\s+'))
         .where((value) => value.isNotEmpty)
         .toList();
-    widget.controller.setEngineOverride(_engineOverride.text.trim());
     await widget.controller.saveConfig();
     if (!mounted) {
       return;
@@ -136,6 +136,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       error: _proxyResultColor == scheme.error,
       errorColor: scheme.error,
     ));
+  }
+
+  Future<void> _importEngineZip() async {
+    final controller = widget.controller;
+    const typeGroup = XTypeGroup(label: 'engine zip', extensions: ['zip']);
+    final file = await openFile(acceptedTypeGroups: [typeGroup]);
+    if (file == null || !mounted) {
+      return;
+    }
+    await controller.importEngine(file.path);
+  }
+
+  Future<void> _importEngineFolder() async {
+    final controller = widget.controller;
+    final path = await getDirectoryPath();
+    if (path == null || path.isEmpty || !mounted) {
+      return;
+    }
+    await controller.importEngine(path);
   }
 
   Future<void> _editProxyProfile(ProxyProfileInfo? existing) async {
@@ -555,12 +574,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _engineOverride,
-                    decoration: illusioInput(
-                      s.engineOverride,
-                      hint: s.engineOverrideHint,
+                  Text(s.enginesSection, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.enginesHint,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => controller.setEngineOverride(''),
+                    child: Row(
+                      children: [
+                        Icon(
+                          controller.engineOverride.isEmpty
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          size: 20,
+                          color: controller.engineOverride.isEmpty
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            s.enginesStandard,
+                            style: theme.textTheme.bodyMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
+                  for (final engine in controller.customEngines)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => controller
+                          .setEngineOverride(controller.engineZipPath(engine)),
+                      child: Row(
+                        children: [
+                          Icon(
+                            controller.engineOverride ==
+                                    controller.engineZipPath(engine)
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 20,
+                            color: controller.engineOverride ==
+                                    controller.engineZipPath(engine)
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              engine.version.isEmpty
+                                  ? engine.name
+                                  : '${engine.name} · ${s.engineVersioned(engine.version)}',
+                              style: theme.textTheme.bodyMedium,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: s.enginesDelete,
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: controller.enginesBusy
+                                ? null
+                                : () => controller.removeEngine(engine.id),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (controller.customEngines.isEmpty)
+                    Text(
+                      s.enginesEmpty,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  if (controller.enginesError.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      s.enginesFailed(controller.enginesError),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.error),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: controller.enginesBusy
+                            ? null
+                            : _importEngineZip,
+                        icon: const Icon(Icons.archive_outlined, size: 18),
+                        label: Text(
+                          controller.enginesBusy
+                              ? s.enginesImporting
+                              : s.enginesImportZip,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: controller.enginesBusy
+                            ? null
+                            : _importEngineFolder,
+                        icon: const Icon(Icons.folder_open_outlined, size: 18),
+                        label: Text(s.enginesImportFolder),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   _SwitchRow(
@@ -702,6 +824,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: controller.proxyApplyToGame,
                     onChanged: controller.setProxyApplyToGame,
                   ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.proxyGuardLabel,
+                    subtitle: s.proxyGuardHint,
+                    value: controller.proxyGuardLaunch,
+                    onChanged: controller.setProxyGuardLaunch,
+                  ),
                   if (_proxyResult.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
@@ -829,6 +958,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: controller.patchRpc,
                     onChanged: controller.setPatchRpc,
                   ),
+                  if (!controller.patchRpc) ...[
+                    const SizedBox(height: 8),
+                    _SwitchRow(
+                      title: s.rpcFakeLabel,
+                      subtitle: s.rpcFakeHint,
+                      value: controller.rpcFake,
+                      onChanged: controller.setRpcFake,
+                    ),
+                    if (controller.rpcFake) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _rpcFakeName,
+                        decoration: illusioInput(s.rpcFakeNameLabel),
+                        onChanged: controller.setRpcFakeName,
+                      ),
+                    ],
+                  ],
                   const SizedBox(height: 8),
                   _SwitchRow(
                     title: s.patchJamLabel,
@@ -952,6 +1098,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: controller.dynamicPgo,
                     onChanged: controller.setDynamicPgo,
                   ),
+                  const SizedBox(height: 8),
+                  _SwitchRow(
+                    title: s.backportsLabel,
+                    subtitle: s.backportsHint,
+                    value: controller.backports,
+                    onChanged: controller.setBackports,
+                  ),
+                  if (controller.backports) ...[
+                    const SizedBox(height: 8),
+                    _SwitchRow(
+                      title: s.backportsNoAnyLabel,
+                      subtitle: s.backportsNoAnyHint,
+                      value: controller.backportsNoAny,
+                      onChanged: controller.setBackportsNoAny,
+                    ),
+                  ],
                 ],
               ),
             ),

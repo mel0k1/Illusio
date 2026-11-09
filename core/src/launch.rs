@@ -84,6 +84,14 @@ pub struct LaunchSpec {
     pub hwid_optout: bool,
     #[serde(default = "default_true")]
     pub dynamic_pgo: bool,
+    #[serde(default, rename = "backports")]
+    pub backports: bool,
+    #[serde(default, rename = "backports_no_any")]
+    pub backports_no_any: bool,
+    #[serde(default, rename = "rpc_fake")]
+    pub rpc_fake: bool,
+    #[serde(default, rename = "rpc_fake_name")]
+    pub rpc_fake_name: String,
 }
 
 fn default_hide_level() -> i64 {
@@ -258,6 +266,27 @@ pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
             ("DOTNET_TieredCompilationMinCallCount", "0"),
         ] {
             env.push((key.into(), value.into()));
+        }
+    }
+    if spec.backports {
+        env.push(("ILLUSIO_BACKPORTS".into(), "1".into()));
+        if spec.backports_no_any {
+            env.push(("ILLUSIO_NO_ANY_BACKPORTS".into(), "1".into()));
+        }
+    }
+    let fork = sanitize_fork_id(&spec.build_fork_id);
+    if !fork.is_empty() {
+        env.push(("ILLUSIO_FORK_ID".into(), fork));
+    }
+    let engine_version = spec.build_engine_version.trim();
+    if !engine_version.is_empty() {
+        env.push(("ILLUSIO_ENGINE_VER".into(), engine_version.to_string()));
+    }
+    if spec.rpc_fake {
+        env.push(("ILLUSIO_RPC_FAKE".into(), "1".into()));
+        let fake = spec.rpc_fake_name.trim();
+        if !fake.is_empty() {
+            env.push(("ILLUSIO_RPC_USERNAME".into(), fake.to_string()));
         }
     }
     env
@@ -624,6 +653,38 @@ mod tests {
         assert!(env.contains(&("ILLUSIO_HWID_VALUE".into(), "abcd".into())));
         assert!(env.contains(&("ROBUST_AUTH_ALLOW_HWID".into(), "0".into())));
         assert!(env.contains(&("DOTNET_TieredPGO".into(), "1".into())));
+    }
+
+    #[test]
+    fn env_carries_backports_and_rpc() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            build_fork_id: "My Fork".into(),
+            build_engine_version: "210.1.0".into(),
+            backports: true,
+            backports_no_any: true,
+            rpc_fake: true,
+            rpc_fake_name: "Guest".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(env.contains(&("ILLUSIO_BACKPORTS".into(), "1".into())));
+        assert!(env.contains(&("ILLUSIO_NO_ANY_BACKPORTS".into(), "1".into())));
+        assert!(env.contains(&("ILLUSIO_FORK_ID".into(), "My_Fork".into())));
+        assert!(env.contains(&("ILLUSIO_ENGINE_VER".into(), "210.1.0".into())));
+        assert!(env.contains(&("ILLUSIO_RPC_FAKE".into(), "1".into())));
+        assert!(env.contains(&("ILLUSIO_RPC_USERNAME".into(), "Guest".into())));
+    }
+
+    #[test]
+    fn env_omits_disabled_backports_and_rpc() {
+        let spec = LaunchSpec {
+            auth_token: "tok".into(),
+            ..LaunchSpec::default()
+        };
+        let env = build_env(&spec);
+        assert!(!env.iter().any(|(key, _)| key == "ILLUSIO_BACKPORTS"));
+        assert!(!env.iter().any(|(key, _)| key == "ILLUSIO_RPC_FAKE"));
     }
 
     #[test]

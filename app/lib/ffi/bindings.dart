@@ -108,6 +108,18 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _selfUpdate = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_self_update')
       .asFunction();
+  static final Pointer<Utf8> Function() _updateFinalize = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_update_finalize')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _enginesImport = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_engines_import')
+      .asFunction();
+  static final Pointer<Utf8> Function() _enginesList = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_engines_list')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _enginesRemove = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_engines_remove')
+      .asFunction();
   static final Pointer<Utf8> Function() _cullContent = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_cull_content')
       .asFunction();
@@ -196,6 +208,16 @@ class Core {
 
   static Map<String, dynamic> selfUpdate(String json) =>
       _withString(json, _selfUpdate);
+
+  static Map<String, dynamic> updateFinalize() => _run(_updateFinalize);
+
+  static Map<String, dynamic> enginesImport(String json) =>
+      _withString(json, _enginesImport);
+
+  static Map<String, dynamic> enginesList() => _run(_enginesList);
+
+  static Map<String, dynamic> enginesRemove(String json) =>
+      _withString(json, _enginesRemove);
 
   static Map<String, dynamic> cullContent() => _run(_cullContent);
 

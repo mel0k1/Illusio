@@ -187,21 +187,33 @@ fn apply_windows(
 ) -> Result<(), String> {
     crate::install::extract_zip(archive, extracted)?;
     let pid = std::process::id();
-    let script = script_dir().join("update.cmd");
+    let script = script_dir().join("update.ps1");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
     let body = format!(
-        "@echo off\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul\r\nif not errorlevel 1 (\r\n  timeout /t 1 /nobreak >nul\r\n  goto wait\r\n)\r\nrobocopy \"{src}\" \"{dst}\" /E /NFL /NDL /NJH /NJS >nul\r\nstart \"\" \"{exe}\"\r\ndel \"%~f0\"\r\n",
-        src = extracted.display(),
-        dst = install.display(),
-        exe = exe.display(),
+        "$deadline = (Get-Date).AddSeconds(60)\r\nwhile (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{\r\n  Start-Sleep -Milliseconds 500\r\n  if ((Get-Date) -gt $deadline) {{ break }}\r\n}}\r\nfunction Copy-Stage([string]$src, [string]$dst) {{\r\n  try {{\r\n    Copy-Item -LiteralPath $src -Destination $dst -Force\r\n  }} catch {{\r\n    Copy-Item -LiteralPath $src -Destination ($dst + '.pending') -Force\r\n  }}\r\n}}\r\nfunction Copy-Tree([string]$root, [string]$out) {{\r\n  New-Item -ItemType Directory -Force -Path $out | Out-Null\r\n  Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object {{\r\n    $rel = $_.FullName.Substring($root.Length).TrimStart('\\', '/')\r\n    if ($rel.Length -eq 0) {{ return }}\r\n    $dst = Join-Path $out $rel\r\n    if ($_.PSIsContainer) {{\r\n      New-Item -ItemType Directory -Force -Path $dst | Out-Null\r\n    }} else {{\r\n      Copy-Stage $_.FullName $dst\r\n    }}\r\n  }}\r\n}}\r\nCopy-Tree '{src}' '{dst}'\r\nStart-Process -FilePath '{exe}'\r\n",
+        pid = pid,
+        src = ps_escape(&extracted.display().to_string()),
+        dst = ps_escape(&install.display().to_string()),
+        exe = ps_escape(&exe.display().to_string()),
     );
     fs::write(&script, body).map_err(|error| error.to_string())?;
-    let mut command = Command::new("cmd");
+    let mut command = Command::new("powershell");
     command
-        .arg("/c")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+        ])
         .arg(&script)
         .current_dir(script.parent().unwrap());
     spawn_detached(command)
+}
+
+#[cfg(target_os = "windows")]
+fn ps_escape(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 #[cfg(target_os = "linux")]
@@ -254,6 +266,76 @@ fn apply_macos(
     let mut command = Command::new("/bin/sh");
     command.arg(&script);
     spawn_detached(command)
+}
+
+pub fn finalize_pending() -> Result<usize, String> {
+    let exe = exe_path()?;
+    let Some(install) = exe.parent() else {
+        return Ok(0);
+    };
+    let mut applied = 0;
+    let mut failures = Vec::new();
+    apply_pending_dir(install, &mut applied, &mut failures);
+    if applied == 0 && failures.is_empty() {
+        return Ok(0);
+    }
+    if failures.is_empty() {
+        return Ok(applied);
+    }
+    Err(failures.join("; "))
+}
+
+fn apply_pending_dir(dir: &Path, applied: &mut usize, failures: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            apply_pending_dir(&path, applied, failures);
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".pending") {
+            continue;
+        }
+
+        let target_name = name.trim_end_matches(".pending").to_string();
+        if target_name.is_empty() {
+            continue;
+        }
+
+        let target = dir.join(&target_name);
+        unlock(&target);
+        let result = fs::rename(&path, &target).or_else(|_| {
+            if target.exists() {
+                fs::remove_file(&target).ok();
+            }
+            fs::copy(&path, &target).and_then(|_| fs::remove_file(&path))
+        });
+        match result {
+            Ok(_) => *applied += 1,
+            Err(error) => failures.push(format!("{target_name}: {error}")),
+        }
+    }
+}
+
+fn unlock(path: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("attrib")
+            .args(["-R", "-H", "-S"])
+            .arg(path)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+    }
 }
 
 pub fn apply(archive: &Path) -> Result<(), String> {
@@ -314,5 +396,29 @@ mod tests {
         } else {
             assert_eq!(suffix, "-linux-x64.tar.gz");
         }
+    }
+
+    #[test]
+    fn applies_pending_files() {
+        let base = std::env::temp_dir().join(format!("illusio-pending-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let nested = base.join("sub");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(base.join("Illusio.exe.pending"), "new").unwrap();
+        fs::write(base.join("Illusio.exe"), "old").unwrap();
+        fs::write(nested.join("lib.dll.pending"), "newlib").unwrap();
+
+        let mut applied = 0;
+        let mut failures = Vec::new();
+        apply_pending_dir(&base, &mut applied, &mut failures);
+        assert_eq!(applied, 2);
+        assert!(failures.is_empty());
+        assert_eq!(fs::read_to_string(base.join("Illusio.exe")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(nested.join("lib.dll")).unwrap(),
+            "newlib"
+        );
+        assert!(!base.join("Illusio.exe.pending").exists());
+        let _ = fs::remove_dir_all(&base);
     }
 }

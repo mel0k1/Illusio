@@ -199,10 +199,6 @@ class S {
       ? 'по умолчанию — системный каталог данных'
       : 'defaults to the system data directory';
   String get launchArgs => ru ? 'Аргументы запуска' : 'Launch arguments';
-  String get engineOverride => ru ? 'Свой движок (zip)' : 'Custom engine (zip)';
-  String get engineOverrideHint => ru
-      ? 'путь к архиву движка вместо CDN'
-      : 'path to an engine archive instead of the CDN';
   String get clientLogs => ru ? 'Логи клиента' : 'Client logs';
   String get clientLogsHint => ru
       ? 'stdout и stderr пишутся в каталог logs'
@@ -549,6 +545,60 @@ class S {
         : value.toStringAsFixed(value >= 10 ? 1 : 2);
     return '$shown ${chosen[unit]}';
   }
+
+  String get enginesSection =>
+      ru ? 'Кастомные движки' : 'Custom engines';
+  String get enginesHint => ru
+      ? 'свой движок вместо CDN: zip или папка, метаданные в engine.json'
+      : 'your own engine instead of the CDN: zip or folder, metadata in engine.json';
+  String get enginesStandard =>
+      ru ? 'Стандартный (с CDN)' : 'Standard (from CDN)';
+  String get enginesImportZip =>
+      ru ? 'Импорт zip' : 'Import zip';
+  String get enginesImportFolder =>
+      ru ? 'Импорт папки' : 'Import folder';
+  String get enginesImporting =>
+      ru ? 'Импортируем…' : 'Importing…';
+  String get enginesEmpty => ru
+      ? 'своих движков пока нет'
+      : 'no custom engines yet';
+  String engineVersioned(String version) =>
+      ru ? 'версия $version' : 'version $version';
+  String get enginesDelete => ru ? 'Удалить движок' : 'Delete engine';
+  String enginesFailed(String error) =>
+      ru ? 'Ошибка движков: $error' : 'Engine error: $error';
+  String get backportsLabel => ru ? 'Бэкпорты' : 'Backports';
+  String get backportsHint => ru
+      ? 'версионно-гейтед патчи: применяются только к совместимым версиям движка и форка'
+      : 'version-gated patches: applied only to compatible engine and fork versions';
+  String get backportsNoAnyLabel =>
+      ru ? 'Отключить Any-бэкпорты' : 'Disable Any-backports';
+  String get backportsNoAnyHint => ru
+      ? 'применять только бэкпорты с точной версией или диапазоном'
+      : 'apply only backports pinned to an exact version or range';
+  String get rpcFakeLabel =>
+      ru ? 'Подмена ника в Discord' : 'Fake Discord name';
+  String get rpcFakeHint => ru
+      ? 'Discord Rich Presence показывает выбранное имя вместо реального'
+      : 'Discord Rich Presence shows the chosen name instead of the real one';
+  String get rpcFakeNameLabel =>
+      ru ? 'Имя для Discord' : 'Discord name';
+  String get proxyGuardTitle =>
+      ru ? 'Прокси не отвечает' : 'Proxy is not responding';
+  String proxyGuardBody(String error) => ru
+      ? 'Игра должна идти через прокси, но он не отвечает: $error. Запустить без прокси?'
+      : 'The game is routed through the proxy, but it is not responding: $error. Launch without the proxy?';
+  String get proxyGuardContinue =>
+      ru ? 'Запустить без прокси' : 'Launch without proxy';
+  String get proxyGuardCancel => ru ? 'Отмена' : 'Cancel';
+  String get proxyGuardLabel =>
+      ru ? 'Проверять прокси перед запуском' : 'Probe proxy before launch';
+  String get proxyGuardHint => ru
+      ? 'если прокси мёртв, лаунчер предложит прямое подключение'
+      : 'if the proxy is dead the launcher offers a direct launch';
+  String get proxyGuardBlocked => ru
+      ? 'запуск остановлен: прокси не отвечает'
+      : 'launch stopped: proxy is not responding';
 }
 
 class SB extends InheritedWidget {

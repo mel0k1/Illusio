@@ -142,6 +142,16 @@ pub struct Config {
     pub hwid_optout: bool,
     #[serde(default = "default_true")]
     pub dynamic_pgo: bool,
+    #[serde(default = "default_true")]
+    pub backports: bool,
+    #[serde(default)]
+    pub backports_no_any: bool,
+    #[serde(default)]
+    pub rpc_fake: bool,
+    #[serde(default = "default_rpc_fake_name")]
+    pub rpc_fake_name: String,
+    #[serde(default = "default_true")]
+    pub proxy_guard_launch: bool,
 }
 
 fn default_hide_level() -> i64 {
@@ -150,6 +160,10 @@ fn default_hide_level() -> i64 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_rpc_fake_name() -> String {
+    "Illusio".to_string()
 }
 
 fn default_blob_keep_days() -> i64 {

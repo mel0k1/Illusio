@@ -375,6 +375,8 @@ internal static class BuiltInPatches
         PatchHwid(harmony);
         if (Flag("ILLUSIO_PATCH_RPC"))
             PatchRpc(harmony);
+        else if (Flag("ILLUSIO_RPC_FAKE"))
+            PatchRpcFake(harmony);
         if (Flag("ILLUSIO_PATCH_JAM_DIALS"))
             PatchJamDials(harmony);
         if (Flag("ILLUSIO_PATCH_BLACKHOLE"))
@@ -451,6 +453,33 @@ internal static class BuiltInPatches
             harmony.Patch(update, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(ReturnFalse)));
 
         Console.WriteLine("[ILLUSIO-PATCH] RPC: Discord отключён");
+    }
+
+    private static void PatchRpcFake(Harmony harmony)
+    {
+        var type = AccessTools.TypeByName("Robust.Client.Utility.DiscordRichPresence");
+        if (type == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] RPC: тип не найден");
+            return;
+        }
+
+        var update = AccessTools.Method(type, "Update");
+        if (update == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] RPC: метод Update не найден");
+            return;
+        }
+
+        harmony.Patch(update, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(RpcFakePrefix)));
+        Console.WriteLine("[ILLUSIO-PATCH] RPC: ник в Discord подменяется");
+    }
+
+    private static void RpcFakePrefix(ref string username)
+    {
+        var fake = (Envsey.Get("ILLUSIO_RPC_USERNAME") ?? "").Trim();
+        if (fake.Length > 0)
+            username = fake;
     }
 
     private static void PatchJamDials(Harmony harmony)
@@ -607,6 +636,7 @@ internal class Program
             TryOpenAssembly("Robust.Shared", out _);
             ApplyMods(overlays);
             ApplyEnginePatches();
+            ApplyBackports();
 
             var args = new MainArgs(_engineArgs, _fileApi, null, extraMounts);
 
@@ -665,6 +695,54 @@ internal class Program
         {
             Console.WriteLine($"[ILLUSIO-RESPACK] ошибка ресурс-паков: {e.Message}");
         }
+    }
+
+    private void ApplyBackports()
+    {
+        var harmony = new Harmony(HarmonyId);
+        try
+        {
+            BackportMan.Setup();
+            BackportMan.PatchBackports(harmony, false);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[ILLUSIO-BACKPORT] ошибка движковых бэкпортов: {e.Message}");
+            return;
+        }
+
+        StartContentBackportsThread(harmony);
+    }
+
+    private static void StartContentBackportsThread(Harmony harmony)
+    {
+        new Thread(() =>
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            while (DateTime.UtcNow < deadline)
+            {
+                var loaded = AppDomain.CurrentDomain
+                    .GetAssemblies()
+                    .Select(assembly => assembly.GetName().Name ?? "")
+                    .ToHashSet(StringComparer.Ordinal);
+                if (loaded.Contains("Content.Client") && loaded.Contains("Content.Shared"))
+                    break;
+
+                Thread.Sleep(400);
+            }
+
+            try
+            {
+                BackportMan.PatchBackports(harmony, true);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[ILLUSIO-BACKPORT] ошибка контентных бэкпортов: {e.Message}");
+            }
+        })
+        {
+            IsBackground = true,
+        }.Start();
     }
 
     private void ApplyMods(IReadOnlyList<(ZipFileApi Api, ZipArchive Archive)> overlays)

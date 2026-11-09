@@ -5,6 +5,7 @@ pub mod auth;
 pub mod config;
 pub mod cull;
 pub mod engine;
+pub mod engines;
 pub mod http;
 pub mod hub;
 pub mod install;
@@ -766,6 +767,59 @@ pub unsafe extern "C" fn illusio_self_update(raw: *const c_char) -> *mut c_char 
             .to_string(),
         },
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_update_finalize() -> *mut c_char {
+    guarded(|| match update::finalize_pending() {
+        Ok(applied) => serde_json::json!({"ok": true, "applied": applied}).to_string(),
+        Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_engines_import(raw: *const c_char) -> *mut c_char {
+    #[derive(Deserialize)]
+    struct Payload {
+        #[serde(default)]
+        path: String,
+    }
+
+    guarded(|| match serde_json::from_str::<Payload>(&read_ptr(raw)) {
+        Ok(payload) => match engines::import(std::path::Path::new(payload.path.trim())) {
+            Ok(engine) => serde_json::json!({"ok": true, "engine": engine}).to_string(),
+            Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+        },
+        Err(message) => serde_json::json!({"ok": false, "error": message.to_string()}).to_string(),
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_engines_list() -> *mut c_char {
+    guarded(|| {
+        let engines = engines::list();
+        let dir = engines::engines_dir()
+            .map(|value| value.display().to_string())
+            .unwrap_or_default();
+        serde_json::json!({"ok": true, "engines": engines, "dir": dir}).to_string()
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_engines_remove(raw: *const c_char) -> *mut c_char {
+    #[derive(Deserialize)]
+    struct Payload {
+        #[serde(default)]
+        id: String,
+    }
+
+    guarded(|| match serde_json::from_str::<Payload>(&read_ptr(raw)) {
+        Ok(payload) => match engines::remove(payload.id.trim()) {
+            Ok(()) => serde_json::json!({"ok": true}).to_string(),
+            Err(message) => serde_json::json!({"ok": false, "error": message}).to_string(),
+        },
+        Err(message) => serde_json::json!({"ok": false, "error": message.to_string()}).to_string(),
+    })
 }
 
 #[no_mangle]

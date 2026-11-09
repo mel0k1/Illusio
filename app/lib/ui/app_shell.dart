@@ -53,6 +53,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
   bool _proxyDialogShown = false;
+  bool _guardDialogShown = false;
 
   @override
   void initState() {
@@ -68,6 +69,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _watchProxy() {
+    if (!_guardDialogShown && widget.controller.launchGuardActive && mounted) {
+      _guardDialogShown = true;
+      _showLaunchGuardDialog()
+          .whenComplete(() => _guardDialogShown = false);
+      return;
+    }
     if (_proxyDialogShown || !widget.controller.proxyUnavailable) {
       return;
     }
@@ -76,6 +83,46 @@ class _AppShellState extends State<AppShell> {
     }
     _proxyDialogShown = true;
     _showProxyDialog();
+  }
+
+  Future<void> _showLaunchGuardDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
+    final error = widget.controller.launchGuardError;
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.network_check_outlined),
+        title: Text(S.of(dialogContext).proxyGuardTitle),
+        content: Text(
+          S.of(dialogContext).proxyGuardBody(
+                error.isEmpty ? 'timeout' : error,
+              ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(S.of(dialogContext).proxyGuardCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(S.of(dialogContext).proxyGuardContinue),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (proceed == true) {
+      await widget.controller.launchGuardContinue();
+      messenger.showSnackBar(
+        illusioSnackBar(s.proxySessionOffNotice),
+      );
+    } else {
+      await widget.controller.launchGuardCancel();
+    }
   }
 
   Future<void> _showProxyDialog() async {

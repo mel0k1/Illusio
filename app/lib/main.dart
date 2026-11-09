@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'ffi/bindings.dart';
 import 'l10n/strings.dart';
 import 'state/app_controller.dart';
 import 'ui/app_shell.dart';
@@ -35,6 +36,7 @@ class _IllusioAppState extends State<IllusioApp> {
   @override
   void initState() {
     super.initState();
+    Future(() => Core.updateFinalize());
     _applyInitialServer();
   }
 

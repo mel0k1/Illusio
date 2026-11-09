@@ -66,6 +66,11 @@ fn config_roundtrip() {
         hwid_value: "aabb".into(),
         hwid_optout: true,
         dynamic_pgo: true,
+        backports: true,
+        backports_no_any: false,
+        rpc_fake: false,
+        rpc_fake_name: "Illusio".into(),
+        proxy_guard_launch: true,
     };
     save_to(&path, &config).expect("save failed");
     let loaded = load_from(&path).expect("load failed");
