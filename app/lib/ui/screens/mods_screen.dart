@@ -220,8 +220,8 @@ class _HowItWorksCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(24),
+        color: scheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(

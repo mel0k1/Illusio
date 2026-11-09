@@ -169,61 +169,71 @@ class _HomeScreenState extends State<HomeScreen> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 110),
           children: [
-            _PageTitle(
-              title: s.homeTitle,
-              subtitle: s.homeSubtitle,
-            ),
-            const SizedBox(height: 20),
-            _DirectConnectCard(
-              controller: _direct,
-              onConnect: _connectDirect,
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickBundle,
-                    icon: const Icon(Icons.movie_outlined, size: 20),
-                    label: Text(s.launchReplay),
-                  ),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _PageTitle(
+                      title: s.homeTitle,
+                      subtitle: s.homeSubtitle,
+                    ),
+                    const SizedBox(height: 20),
+                    _DirectConnectCard(
+                      controller: _direct,
+                      onConnect: _connectDirect,
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickBundle,
+                            icon: const Icon(Icons.movie_outlined, size: 20),
+                            label: Text(s.launchReplay),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Text(s.favorites,
+                            style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${favorites.length}',
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const Spacer(),
+                        FilledButton.tonalIcon(
+                          onPressed: _openAddDialog,
+                          icon: const Icon(Icons.add, size: 20),
+                          label: Text(s.add),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (favorites.isEmpty)
+                      _EmptyFavorites(onAdd: _openAddDialog)
+                    else
+                      for (final server in favorites) ...[
+                        _FavoriteTile(
+                          server: server,
+                          controller: widget.controller,
+                          onConnect: () =>
+                              connectFlow(context, widget.controller, server),
+                          onEdit: () => _openEditDialog(server),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                  ],
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 28),
-            Row(
-              children: [
-                Text(s.favorites,
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(width: 8),
-                Text(
-                  '${favorites.length}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const Spacer(),
-                FilledButton.tonalIcon(
-                  onPressed: _openAddDialog,
-                  icon: const Icon(Icons.add, size: 20),
-                  label: Text(s.add),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (favorites.isEmpty)
-              _EmptyFavorites(onAdd: _openAddDialog)
-            else
-              for (final server in favorites) ...[
-                _FavoriteTile(
-                  server: server,
-                  controller: widget.controller,
-                  onConnect: () =>
-                      connectFlow(context, widget.controller, server),
-                  onEdit: () => _openEditDialog(server),
-                ),
-                const SizedBox(height: 10),
-              ],
           ],
         );
       },
@@ -269,8 +279,8 @@ class _DirectConnectCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(24),
+        color: scheme.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
@@ -278,7 +288,8 @@ class _DirectConnectCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.bolt, size: 20, color: scheme.primary),
+              Icon(Icons.settings_ethernet_rounded,
+                  size: 20, color: scheme.primary),
               const SizedBox(width: 8),
               Text(
                 s.directTitle,

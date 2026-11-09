@@ -32,7 +32,7 @@ class AppController extends ChangeNotifier {
   final List<LoginInfo> accounts;
   LoginInfo? login;
 
-  String theme = 'system';
+  String theme = 'dark';
   String language = 'ru';
   bool hideEmpty = false;
   bool hideFull = false;
@@ -161,7 +161,10 @@ class AppController extends ChangeNotifier {
                 GameServer.fromJson((value as Map).cast<String, dynamic>()),
           ),
         );
-      theme = config['theme']?.toString() ?? 'system';
+      theme = config['theme']?.toString() ?? 'dark';
+      if (theme == 'system' || theme.isEmpty) {
+        theme = 'dark';
+      }
       language = config['language']?.toString() ?? 'ru';
       hideEmpty = config['hide_empty'] == true;
       hideFull = config['hide_full'] == true;

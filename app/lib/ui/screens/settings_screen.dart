@@ -346,13 +346,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<(String, String, Color)> _themeChips(AppController controller) {
     final s = S.of(context);
     return [
-      (s.themeDark, 'dark', const Color(0xFFFFD65C)),
-      (s.themeDarkRed, 'darkRed', const Color(0xFFFFB4A0)),
-      (s.themeDarkPurple, 'darkPurple', const Color(0xFFD0B4FF)),
-      (s.themeMidnightBlue, 'midnightBlue', const Color(0xFFAAC7FF)),
-      (s.themeEmeraldDusk, 'emeraldDusk', const Color(0xFF93D69B)),
-      (s.themeCopperNight, 'copperNight', const Color(0xFFFFB77E)),
-      (s.themeLight, 'light', const Color(0xFFF4ECDF)),
+      (s.themeDark, 'dark', themeDot('dark')),
+      (s.themeDarkRed, 'darkRed', themeDot('darkRed')),
+      (s.themeDarkPurple, 'darkPurple', themeDot('darkPurple')),
+      (s.themeMidnightBlue, 'midnightBlue', themeDot('midnightBlue')),
+      (s.themeEmeraldDusk, 'emeraldDusk', themeDot('emeraldDusk')),
+      (s.themeCopperNight, 'copperNight', themeDot('copperNight')),
+      (s.themeLight, 'light', themeDot('light')),
     ];
   }
 

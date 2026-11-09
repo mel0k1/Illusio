@@ -7,14 +7,14 @@ class IllusioLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.3),
-      child: Image.asset(
-        'assets/brand/logo.jpg',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      ),
+    final color = Theme.of(context).colorScheme.primary;
+    return Image.asset(
+      'assets/brand/splash.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      color: color,
+      colorBlendMode: BlendMode.srcIn,
     );
   }
 }

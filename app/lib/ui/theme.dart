@@ -1,88 +1,104 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-const Color hullBlack = Color(0xFF17140F);
-const Color hullSurface = Color(0xFF231F18);
-const Color hullRaised = Color(0xFF2E2922);
-const Color edgeColor = Color(0xFF52483A);
-const Color signalAmber = Color(0xFFFFD65C);
-const Color calmGreen = Color(0xFF93D69B);
-const Color fogWhite = Color(0xFFF2E9D9);
-const Color mutedFog = Color(0xFFD6C9AE);
-const Color errorClay = Color(0xFFFFB4AB);
-
-const Color hullBlackLight = Color(0xFFFFF8F0);
-const Color hullSurfaceLight = Color(0xFFF4ECDF);
-const Color hullRaisedLight = Color(0xFFEEE7D9);
-const Color edgeColorLight = Color(0xFFD0C9B5);
-
-const Color surfaceWarmDark = Color(0xFF1F1B14);
-
-const ColorScheme darkScheme = ColorScheme.dark(
-  primary: signalAmber,
-  onPrimary: Color(0xFF3A2E00),
-  primaryContainer: Color(0xFF5C4800),
-  onPrimaryContainer: Color(0xFFFFE08D),
-  secondary: calmGreen,
-  onSecondary: Color(0xFF0A3316),
-  secondaryContainer: Color(0xFF2A4A2E),
-  onSecondaryContainer: Color(0xFFB4E9B8),
-  tertiary: Color(0xFFD9C3FF),
-  onTertiary: Color(0xFF341D66),
-  tertiaryContainer: Color(0xFF4B367D),
-  onTertiaryContainer: Color(0xFFEADDFF),
-  error: errorClay,
-  onError: Color(0xFF442925),
-  errorContainer: Color(0xFF6A2B24),
-  onErrorContainer: Color(0xFFFFDAD6),
-  surface: hullBlack,
-  onSurface: fogWhite,
-  onSurfaceVariant: mutedFog,
-  surfaceContainerLowest: Color(0xFF0C0A07),
-  surfaceContainerLow: surfaceWarmDark,
-  surfaceContainer: hullSurface,
-  surfaceContainerHigh: hullRaised,
-  surfaceContainerHighest: Color(0xFF39332B),
-  onInverseSurface: Color(0xFF35302B),
-  inverseSurface: fogWhite,
-  inversePrimary: Color(0xFF775A00),
-  outline: Color(0xFF9F927B),
-  outlineVariant: edgeColor,
+const ColorScheme inkDarkScheme = ColorScheme.dark(
+  primary: Color(0xFFF2F2F3),
+  onPrimary: Color(0xFF111113),
+  primaryContainer: Color(0xFFF2F2F3),
+  onPrimaryContainer: Color(0xFF111113),
+  secondary: Color(0xFFC3C3C9),
+  onSecondary: Color(0xFF1C1C1F),
+  secondaryContainer: Color(0xFF2E2E33),
+  onSecondaryContainer: Color(0xFFE4E4E8),
+  tertiary: Color(0xFFABABB2),
+  onTertiary: Color(0xFF19191C),
+  tertiaryContainer: Color(0xFF333338),
+  onTertiaryContainer: Color(0xFFE0E0E4),
+  error: Color(0xFFFFB4AB),
+  onError: Color(0xFF5F1512),
+  errorContainer: Color(0xFF7A201B),
+  onErrorContainer: Color(0xFFFFDAD5),
+  surface: Color(0xFF0B0B0C),
+  onSurface: Color(0xFFEDEDEF),
+  onSurfaceVariant: Color(0xFFB2B2B8),
+  surfaceContainerLowest: Color(0xFF060607),
+  surfaceContainerLow: Color(0xFF131315),
+  surfaceContainer: Color(0xFF18181B),
+  surfaceContainerHigh: Color(0xFF222225),
+  surfaceContainerHighest: Color(0xFF2D2D31),
+  onInverseSurface: Color(0xFF151517),
+  inverseSurface: Color(0xFFEDEDEF),
+  inversePrimary: Color(0xFF2B2B2F),
+  outline: Color(0xFF8A8A91),
+  outlineVariant: Color(0xFF38383D),
   scrim: Color(0xFF000000),
+  surfaceTint: Color(0xFFF2F2F3),
 );
 
-const ColorScheme lightScheme = ColorScheme.light(
-  primary: Color(0xFF775A00),
+const ColorScheme inkLightScheme = ColorScheme.light(
+  primary: Color(0xFF131315),
   onPrimary: Color(0xFFFFFFFF),
-  primaryContainer: Color(0xFFFFE08D),
-  onPrimaryContainer: Color(0xFF241A00),
-  secondary: Color(0xFF3B6E41),
+  primaryContainer: Color(0xFF131315),
+  onPrimaryContainer: Color(0xFFF4F4F5),
+  secondary: Color(0xFF54545B),
   onSecondary: Color(0xFFFFFFFF),
-  secondaryContainer: Color(0xFFC2EFC1),
-  onSecondaryContainer: Color(0xFF00210A),
-  tertiary: Color(0xFF654DBA),
+  secondaryContainer: Color(0xFFE8E8EB),
+  onSecondaryContainer: Color(0xFF1A1A1D),
+  tertiary: Color(0xFF6B6B72),
   onTertiary: Color(0xFFFFFFFF),
-  tertiaryContainer: Color(0xFFEADDFF),
-  onTertiaryContainer: Color(0xFF21005D),
+  tertiaryContainer: Color(0xFFE2E2E6),
+  onTertiaryContainer: Color(0xFF1A1A1D),
   error: Color(0xFFBA1A1A),
   onError: Color(0xFFFFFFFF),
   errorContainer: Color(0xFFFFDAD6),
   onErrorContainer: Color(0xFF410002),
-  surface: hullBlackLight,
-  onSurface: Color(0xFF201B11),
-  onSurfaceVariant: Color(0xFF4C4636),
+  surface: Color(0xFFFFFFFF),
+  onSurface: Color(0xFF131315),
+  onSurfaceVariant: Color(0xFF5E5E65),
   surfaceContainerLowest: Color(0xFFFFFFFF),
-  surfaceContainerLow: Color(0xFFFAF2E7),
-  surfaceContainer: hullSurfaceLight,
-  surfaceContainerHigh: hullRaisedLight,
-  surfaceContainerHighest: Color(0xFFE8E1D4),
-  onInverseSurface: Color(0xFFFBF2E7),
-  inverseSurface: Color(0xFF35302B),
-  inversePrimary: Color(0xFFFFD65C),
-  outline: Color(0xFF7E7653),
-  outlineVariant: edgeColorLight,
+  surfaceContainerLow: Color(0xFFFAFAFA),
+  surfaceContainer: Color(0xFFF4F4F5),
+  surfaceContainerHigh: Color(0xFFEFEFF1),
+  surfaceContainerHighest: Color(0xFFE7E7EA),
+  onInverseSurface: Color(0xFFF2F2F3),
+  inverseSurface: Color(0xFF1B1B1E),
+  inversePrimary: Color(0xFFF2F2F3),
+  outline: Color(0xFF7B7B82),
+  outlineVariant: Color(0xFFDBDBDF),
   scrim: Color(0xFF000000),
+  surfaceTint: Color(0xFF131315),
 );
+
+const Map<String, Color> inkPresetSeeds = {
+  'darkRed': Color(0xFFFFB4A9),
+  'darkPurple': Color(0xFFD0B4FF),
+  'midnightBlue': Color(0xFFAAC7FF),
+  'emeraldDusk': Color(0xFF9CD69D),
+  'copperNight': Color(0xFFFFB77E),
+};
+
+Color themeDot(String id) {
+  final seed = inkPresetSeeds[id];
+  if (seed != null) {
+    return seed;
+  }
+  return switch (id) {
+    'dark' => const Color(0xFFF2F2F3),
+    'light' => const Color(0xFF131315),
+    _ => const Color(0xFF8A8A91),
+  };
+}
+
+ColorScheme _presetScheme(String preset) {
+  final seed = inkPresetSeeds[preset];
+  if (seed == null) {
+    return inkDarkScheme;
+  }
+  return ColorScheme.fromSeed(
+    seedColor: seed,
+    brightness: Brightness.dark,
+  );
+}
 
 const Duration spatialFast = Duration(milliseconds: 280);
 const Duration spatialDefault = Duration(milliseconds: 380);
@@ -92,56 +108,10 @@ const Curve expressCurve = Easing.emphasizedDecelerate;
 const Curve settleCurve = Easing.standard;
 const Curve exitCurve = Easing.emphasizedAccelerate;
 
-class IllusioPreset {
-  const IllusioPreset(
-    this.id,
-    this.primary,
-    this.onPrimary,
-    this.primaryContainer,
-    this.onPrimaryContainer,
-  );
-
-  final String id;
-  final Color primary;
-  final Color onPrimary;
-  final Color primaryContainer;
-  final Color onPrimaryContainer;
-}
-
-const List<IllusioPreset> illusioPresets = [
-  IllusioPreset('dark', signalAmber, Color(0xFF3A2E00), Color(0xFF5C4800),
-      Color(0xFFFFE08D)),
-  IllusioPreset('darkRed', Color(0xFFFFB4A0), Color(0xFF5B1500),
-      Color(0xFF7C2C00), Color(0xFFFFDBCF)),
-  IllusioPreset('darkPurple', Color(0xFFD0B4FF), Color(0xFF381E72),
-      Color(0xFF4F378B), Color(0xFFEADDFF)),
-  IllusioPreset('midnightBlue', Color(0xFFAAC7FF), Color(0xFF002F67),
-      Color(0xFF00458F), Color(0xFFD6E3FF)),
-  IllusioPreset('emeraldDusk', calmGreen, Color(0xFF00390F), Color(0xFF1F5123),
-      Color(0xFFB4F1B5)),
-  IllusioPreset('copperNight', Color(0xFFFFB77E), Color(0xFF4A2800),
-      Color(0xFF6B3D0D), Color(0xFFFFDCC2)),
-];
-
-ColorScheme _applyPreset(ColorScheme scheme, String preset) {
-  for (final value in illusioPresets) {
-    if (value.id != preset) {
-      continue;
-    }
-    return scheme.copyWith(
-      primary: value.primary,
-      onPrimary: value.onPrimary,
-      primaryContainer: value.primaryContainer,
-      onPrimaryContainer: value.onPrimaryContainer,
-    );
-  }
-  return scheme;
-}
-
 ThemeData buildIllusioTheme(Brightness brightness, {String preset = 'dark'}) {
-  final base = brightness == Brightness.dark ? darkScheme : lightScheme;
-  final scheme =
-      brightness == Brightness.dark ? _applyPreset(base, preset) : base;
+  final scheme = brightness == Brightness.dark
+      ? _presetScheme(preset)
+      : inkLightScheme;
   final theme = ThemeData(
     useMaterial3: true,
     brightness: brightness,
