@@ -11,6 +11,7 @@ use crate::acz;
 use crate::engine;
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20);
+const DOWNLOAD_MAX_TIME: Duration = Duration::from_secs(10_800);
 const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -162,6 +163,10 @@ pub struct StoredBuild {
     pub engine_version: String,
     #[serde(default)]
     pub acz: bool,
+    #[serde(default, rename = "engineZip")]
+    pub engine_zip: String,
+    #[serde(default, rename = "engineSig")]
+    pub engine_sig: String,
 }
 
 pub fn marker_path(dir: &Path) -> PathBuf {
@@ -436,7 +441,34 @@ fn execute(
     let stored = read_marker(&target);
     if let Some(stored) = stored.as_ref() {
         if build_matches(stored, &build) {
-            return Ok((target, info, "клиент уже актуален".into()));
+            if !stored.acz {
+                set_state(|state| {
+                    state.mode = "zip".into();
+                });
+                return Ok((target, info, "клиент уже актуален".into()));
+            }
+            let content_zip = target.join("content.zip");
+            if content_zip.exists() {
+                let cached_engine = PathBuf::from(stored.engine_zip.trim());
+                let pair = if !stored.engine_zip.trim().is_empty()
+                    && !stored.engine_sig.trim().is_empty()
+                    && cached_engine.exists()
+                {
+                    Some((cached_engine, stored.engine_sig.clone()))
+                } else {
+                    prepare_engine(&root, &stored.engine_version).ok()
+                };
+                if let Some((engine_zip, engine_sig)) = pair {
+                    set_state(|state| {
+                        state.mode = "acz".into();
+                        state.engine_zip = engine_zip.display().to_string();
+                        state.content_zip = content_zip.display().to_string();
+                        state.engine_sig = engine_sig.clone();
+                        state.modules = crate::modules::read_names(&engine_zip).unwrap_or_default();
+                    });
+                    return Ok((target, info, "клиент уже актуален".into()));
+                }
+            }
         }
     }
 
@@ -455,6 +487,8 @@ fn execute(
                         manifest_hash: payload.manifest_hash.clone(),
                         engine_version: build.engine_version.clone(),
                         acz: true,
+                        engine_zip: payload.engine_zip.display().to_string(),
+                        engine_sig: payload.engine_sig.clone(),
                     },
                 )?;
                 set_state(|state| {
@@ -877,9 +911,39 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
     });
 
     if target.exists() {
-        fs::remove_dir_all(target).map_err(|error| error.to_string())?;
+        let staging = target.parent().unwrap_or(root).join(format!(
+            "{}.new-{}",
+            target
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("client"),
+            std::process::id()
+        ));
+        if staging.exists() {
+            fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
+        }
+        extract_zip(&zip_path, &staging)?;
+        let backup = target.parent().unwrap_or(root).join(format!(
+            "{}.old-{}",
+            target
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("client"),
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&backup);
+        fs::rename(target, &backup).map_err(|error| error.to_string())?;
+        if fs::rename(&staging, target).is_err() {
+            let _ = fs::rename(&backup, target);
+            let _ = fs::remove_dir_all(&staging);
+            fs::remove_file(&zip_path).ok();
+            fs::remove_file(sidecar_path(&zip_path)).ok();
+            return Err("не удалось заменить каталог клиента".into());
+        }
+        let _ = fs::remove_dir_all(&backup);
+    } else {
+        extract_zip(&zip_path, target)?;
     }
-    extract_zip(&zip_path, target)?;
     fs::remove_file(&zip_path).ok();
     fs::remove_file(sidecar_path(&zip_path)).ok();
 
@@ -910,8 +974,8 @@ fn download_client() -> Result<reqwest::blocking::Client, String> {
         reqwest::blocking::Client::builder(),
         crate::http::Route::Launcher,
     )
-    .timeout(None)
     .connect_timeout(DOWNLOAD_TIMEOUT)
+    .timeout(DOWNLOAD_MAX_TIME)
     .build()
     .map_err(|error| error.to_string())
 }
@@ -1059,6 +1123,8 @@ mod tests {
             manifest_hash: "feed".into(),
             engine_version: "240.1.0.5".into(),
             acz: true,
+            engine_zip: "/cache/engine.zip".into(),
+            engine_sig: "sig".into(),
         };
         write_marker(&dir, &build).unwrap();
         let read = read_marker(&dir).unwrap();
@@ -1066,6 +1132,8 @@ mod tests {
         assert_eq!(read.hash, "abcd");
         assert_eq!(read.manifest_hash, "feed");
         assert_eq!(read.engine_version, "240.1.0.5");
+        assert_eq!(read.engine_zip, "/cache/engine.zip");
+        assert_eq!(read.engine_sig, "sig");
         assert!(read.acz);
         fs::remove_dir_all(&dir).ok();
     }

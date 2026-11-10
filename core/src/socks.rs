@@ -1,6 +1,5 @@
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
-use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -32,8 +31,7 @@ pub fn encode_userinfo(value: &str) -> String {
             | b'+'
             | b','
             | b';'
-            | b'='
-            | b':' => encoded.push(byte as char),
+            | b'=' => encoded.push(byte as char),
             _ => encoded.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -386,6 +384,16 @@ pub struct PreparedRelay {
     pub local_port: u16,
 }
 
+pub struct RelayHandle {
+    shared: Arc<RelayShared>,
+}
+
+impl RelayHandle {
+    pub fn stop(&self) {
+        self.shared.stop.store(true, Ordering::SeqCst);
+    }
+}
+
 pub fn prepare_udp_relay(
     proxy: &ProxyConfig,
     target_host: &str,
@@ -443,7 +451,7 @@ impl PreparedRelay {
         self.shared.stop.store(true, Ordering::SeqCst);
     }
 
-    pub fn start(self, mut child: Child) {
+    pub fn start(self) -> RelayHandle {
         let shared = Arc::clone(&self.shared);
         let target_endpoint = self.shared.target_endpoint;
         let is_ipv6_relay = self
@@ -452,43 +460,41 @@ impl PreparedRelay {
             .map(|addr| addr.is_ipv6())
             .unwrap_or(false);
         let upstream = Arc::clone(&self.shared);
-        let game_socket = self
-            .game_socket
-            .try_clone()
-            .expect("не удалось клонировать UDP-сокет игры");
-        let relay_socket = self
-            .relay_socket
-            .try_clone()
-            .expect("не удалось клонировать UDP-сокет релея");
-        thread::spawn(move || loop {
-            if upstream.stopped() {
-                return;
-            }
-            let mut buffer = vec![0u8; 65536];
-            let (size, source) = match game_socket.recv_from(&mut buffer) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            if let Ok(mut guard) = upstream.client_endpoint.lock() {
-                let changed = match *guard {
-                    Some(current) => !same_address(current, source),
-                    None => true,
+        let game_socket = self.game_socket.try_clone();
+        let relay_socket = self.relay_socket.try_clone();
+        if let (Ok(game_socket), Ok(relay_socket)) = (game_socket, relay_socket) {
+            thread::spawn(move || loop {
+                if upstream.stopped() {
+                    return;
+                }
+                let mut buffer = vec![0u8; 65536];
+                let (size, source) = match game_socket.recv_from(&mut buffer) {
+                    Ok(value) => value,
+                    Err(_) => continue,
                 };
-                if changed {
-                    *guard = Some(source);
+                if let Ok(mut guard) = upstream.client_endpoint.lock() {
+                    let changed = match *guard {
+                        Some(current) => !same_address(current, source),
+                        None => true,
+                    };
+                    if changed {
+                        *guard = Some(source);
+                    }
                 }
-            }
-            let framed = frame_udp(target_endpoint, &buffer[..size]);
-            let endpoint = match upstream.relay_endpoint.lock() {
-                Ok(guard) => {
-                    let mut value = *guard;
-                    value.set_ip(normalize_for_socket(value.ip(), is_ipv6_relay));
-                    value
-                }
-                Err(_) => return,
-            };
-            let _ = relay_socket.send_to(&framed, endpoint);
-        });
+                let framed = frame_udp(target_endpoint, &buffer[..size]);
+                let endpoint = match upstream.relay_endpoint.lock() {
+                    Ok(guard) => {
+                        let mut value = *guard;
+                        value.set_ip(normalize_for_socket(value.ip(), is_ipv6_relay));
+                        value
+                    }
+                    Err(_) => return,
+                };
+                let _ = relay_socket.send_to(&framed, endpoint);
+            });
+        } else {
+            shared.stop.store(true, Ordering::SeqCst);
+        }
         let downstream = Arc::clone(&shared);
         let game_socket = self.game_socket;
         let relay_socket = self.relay_socket;
@@ -516,28 +522,28 @@ impl PreparedRelay {
             }
         });
         let mut control = self.control;
+        let monitor = Arc::clone(&shared);
         thread::spawn(move || {
             let mut probe = [0u8; 1];
             loop {
-                if child.try_wait().is_ok_and(|state| state.is_some()) {
-                    break;
+                match control.read(&mut probe) {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => {}
                 }
-                if let Ok(0) = control.read(&mut probe) {
-                    break;
-                }
-                if shared.stopped() {
+                if monitor.stopped() {
                     break;
                 }
             }
-            shared.stop.store(true, Ordering::SeqCst);
+            monitor.stop.store(true, Ordering::SeqCst);
         });
+        RelayHandle { shared }
     }
 }
 
 #[cfg(all(test, unix))]
 mod relay_tests {
     use super::*;
-    use std::process::{Command, Stdio};
 
     struct FakeSocks {
         addr: SocketAddr,
@@ -647,14 +653,7 @@ mod relay_tests {
         };
         let relay = prepare_udp_relay(&proxy, "203.0.113.10", 1212).unwrap();
         let local_port = relay.local_port;
-        let child = Command::new("sleep")
-            .arg("30")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let child_pid = child.id();
-        relay.start(child);
+        let handle = relay.start();
         let client = UdpSocket::bind("127.0.0.1:0").unwrap();
         client
             .set_read_timeout(Some(Duration::from_secs(5)))
@@ -668,7 +667,7 @@ mod relay_tests {
         let mut buffer = [0u8; 64];
         let (size, _) = client.recv_from(&mut buffer).unwrap();
         assert_eq!(&buffer[..size], b"pong");
-        let _ = Command::new("kill").arg(child_pid.to_string()).spawn();
+        handle.stop();
         fake.shutdown.store(true, Ordering::SeqCst);
     }
 }

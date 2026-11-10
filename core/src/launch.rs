@@ -184,7 +184,9 @@ fn watch_child(mut child: std::process::Child, log_dir: String, relay: Option<Pr
             status.crashed = false;
             status.launched_at = unix_millis();
         });
-        let deadline = started + CRASH_WINDOW;
+        let crash_deadline = started + CRASH_WINDOW;
+        let mut handle: Option<crate::socks::RelayHandle> = None;
+        let mut relay = relay;
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
@@ -197,23 +199,29 @@ fn watch_child(mut child: std::process::Child, log_dir: String, relay: Option<Pr
                         entry.exit_code = status.code().unwrap_or(-1) as i64;
                         entry.log_tail = tail;
                     });
-                    if let Some(relay) = relay {
-                        relay.stop();
+                    if let Some(value) = handle {
+                        value.stop();
+                    } else if let Some(value) = relay.take() {
+                        value.stop();
                     }
                     break;
                 }
                 Ok(None) => {
-                    if Instant::now() >= deadline {
-                        if let Some(relay) = relay {
-                            relay.start(child);
-                        }
-                        break;
+                    if handle.is_none() && Instant::now() >= crash_deadline {
+                        handle = relay.take().map(PreparedRelay::start);
                     }
-                    std::thread::sleep(Duration::from_millis(25));
+                    let pace = if handle.is_some() || Instant::now() >= crash_deadline {
+                        Duration::from_millis(250)
+                    } else {
+                        Duration::from_millis(25)
+                    };
+                    std::thread::sleep(pace);
                 }
                 Err(_) => {
-                    if let Some(relay) = relay {
-                        relay.stop();
+                    if let Some(value) = handle {
+                        value.stop();
+                    } else if let Some(value) = relay.take() {
+                        value.stop();
                     }
                     break;
                 }

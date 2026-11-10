@@ -336,8 +336,18 @@ pub fn load_from(path: &PathBuf) -> Result<Config, String> {
         return Ok(Config::default());
     }
     let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let parsed: Config = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-    Ok(parsed.migrated())
+    match serde_json::from_str::<Config>(&raw) {
+        Ok(config) => Ok(config.migrated()),
+        Err(error) => {
+            let backup = path.with_extension("json.bak");
+            if let Ok(previous) = fs::read_to_string(&backup) {
+                if let Ok(config) = serde_json::from_str::<Config>(&previous) {
+                    return Ok(config.migrated());
+                }
+            }
+            Err(error.to_string())
+        }
+    }
 }
 
 pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
@@ -345,7 +355,13 @@ pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let raw = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())
+    let backup = path.with_extension("json.bak");
+    if path.exists() {
+        let _ = fs::copy(path, &backup);
+    }
+    let temp = path.with_extension("json.tmp");
+    fs::write(&temp, raw).map_err(|error| error.to_string())?;
+    fs::rename(&temp, path).map_err(|error| error.to_string())
 }
 
 pub fn load() -> Result<Config, String> {

@@ -55,6 +55,7 @@ class _AppShellState extends State<AppShell> {
   bool _proxyDialogShown = false;
   bool _guardDialogShown = false;
   bool _crashDialogShown = false;
+  bool _connectConsuming = false;
 
   @override
   void initState() {
@@ -62,13 +63,26 @@ class _AppShellState extends State<AppShell> {
     _consumePendingConnect();
     widget.controller.addListener(_watchProxy);
     widget.controller.addListener(_watchCrash);
+    widget.controller.addListener(_watchPendingConnect);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_watchProxy);
     widget.controller.removeListener(_watchCrash);
+    widget.controller.removeListener(_watchPendingConnect);
     super.dispose();
+  }
+
+  void _watchPendingConnect() {
+    if (_connectConsuming || !mounted) {
+      return;
+    }
+    final url = widget.controller.pendingConnect;
+    if (url == null || url.isEmpty) {
+      return;
+    }
+    _consumePendingConnect();
   }
 
   void _watchCrash() {
@@ -236,17 +250,25 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _consumePendingConnect() async {
-    await widget.controller.ready;
-    if (!mounted) {
+    if (_connectConsuming) {
       return;
     }
-    final url = widget.controller.pendingConnect;
-    if (url == null || url.isEmpty) {
-      return;
+    _connectConsuming = true;
+    try {
+      await widget.controller.ready;
+      if (!mounted) {
+        return;
+      }
+      final url = widget.controller.pendingConnect;
+      if (url == null || url.isEmpty) {
+        return;
+      }
+      widget.controller.pendingConnect = null;
+      await connectFlow(
+          context, widget.controller, GameServer(name: url, url: url));
+    } finally {
+      _connectConsuming = false;
     }
-    widget.controller.pendingConnect = null;
-    await connectFlow(
-        context, widget.controller, GameServer(name: url, url: url));
   }
 
   void _openAccount() {
