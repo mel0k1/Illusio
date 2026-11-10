@@ -61,6 +61,11 @@ fn config_roundtrip() {
         patch_rpc: false,
         patch_jam_dials: false,
         patch_blackhole: false,
+        skip_privacy: true,
+        throw_patch_fail: false,
+        no_autologin: true,
+        patch_flyi: false,
+        ps_debug: true,
         hide_level: 2,
         hwid_mode: "fixed".into(),
         hwid_value: "aabb".into(),
@@ -107,6 +112,11 @@ fn config_roundtrip() {
     assert!(loaded.client_logs);
     assert_eq!(loaded.filter_tags, vec!["lang:ru".to_string()]);
     assert_eq!(loaded.accepted_privacy.len(), 1);
+    assert!(loaded.skip_privacy);
+    assert!(!loaded.throw_patch_fail);
+    assert!(loaded.no_autologin);
+    assert!(!loaded.patch_flyi);
+    assert!(loaded.ps_debug);
     fs::remove_dir_all(dir).ok();
 }
 

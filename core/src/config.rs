@@ -132,6 +132,16 @@ pub struct Config {
     pub patch_jam_dials: bool,
     #[serde(default)]
     pub patch_blackhole: bool,
+    #[serde(default)]
+    pub skip_privacy: bool,
+    #[serde(default)]
+    pub throw_patch_fail: bool,
+    #[serde(default)]
+    pub no_autologin: bool,
+    #[serde(default)]
+    pub patch_flyi: bool,
+    #[serde(default)]
+    pub ps_debug: bool,
     #[serde(default = "default_hide_level")]
     pub hide_level: i64,
     #[serde(default)]
@@ -394,6 +404,11 @@ mod tests {
         config.proxy_apply_to_game = true;
         config.language = "en".into();
         config.dll_mods_enabled = vec!["half.dll".into()];
+        config.skip_privacy = true;
+        config.throw_patch_fail = true;
+        config.no_autologin = true;
+        config.patch_flyi = true;
+        config.ps_debug = true;
         config.subverter_enabled = vec!["/mods/subverter.dll".into()];
         config.res_packs_enabled = vec!["HiTech".into()];
         config.dump_resources = true;
@@ -407,6 +422,11 @@ mod tests {
         assert!(parsed.proxy().udp_relay);
         assert!(parsed.proxy().configured());
         assert_eq!(parsed.language, "en");
+        assert!(parsed.skip_privacy);
+        assert!(parsed.throw_patch_fail);
+        assert!(parsed.no_autologin);
+        assert!(parsed.patch_flyi);
+        assert!(parsed.ps_debug);
         assert_eq!(parsed.dll_mods_enabled, vec!["half.dll".to_string()]);
         assert_eq!(
             parsed.subverter_enabled,

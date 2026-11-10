@@ -88,6 +88,11 @@ class AppController extends ChangeNotifier {
   bool proxyGuardLaunch = true;
   bool patchless = false;
   bool stealthRegistries = false;
+  bool skipPrivacy = false;
+  bool throwPatchFail = false;
+  bool noAutologin = false;
+  bool patchFlyi = false;
+  bool psDebug = false;
   bool adminGuid = false;
   String adminGuidValue = '';
   bool modLogs = false;
@@ -277,6 +282,11 @@ class AppController extends ChangeNotifier {
       proxyGuardLaunch = config['proxy_guard_launch'] != false;
       patchless = config['patchless'] == true;
       stealthRegistries = config['stealth_registries'] == true;
+      skipPrivacy = config['skip_privacy'] == true;
+      throwPatchFail = config['throw_patch_fail'] == true;
+      noAutologin = config['no_autologin'] == true;
+      patchFlyi = config['patch_flyi'] == true;
+      psDebug = config['ps_debug'] == true;
       adminGuid = config['admin_guid'] == true;
       adminGuidValue = config['admin_guid_value']?.toString() ?? '';
       modLogs = config['mod_logs'] == true;
@@ -320,7 +330,9 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     await _loadAuxDirs();
     _startTimers();
-    _refreshSession();
+    if (!noAutologin) {
+      _refreshSession();
+    }
     _checkProxyOnStartup();
     if (autoUpdate) {
       checkForUpdates(auto: true);
@@ -667,6 +679,11 @@ class AppController extends ChangeNotifier {
       'admin_guid': adminGuid,
       'admin_guid_value': adminGuidValue,
       'mod_logs': modLogs,
+      'skip_privacy': skipPrivacy,
+      'throw_patch_fail': throwPatchFail,
+      'no_autologin': noAutologin,
+      'patch_flyi': patchFlyi,
+      'ps_debug': psDebug,
       'filter_hubs': filterHubs,
       'update_prerelease': updatePrerelease,
       'card_map': cardMap,
@@ -1660,6 +1677,9 @@ class AppController extends ChangeNotifier {
       'stealth_registries': stealthRegistries,
       'admin_guid': adminGuid,
       'admin_guid_value': adminGuidValue,
+      'throw_patch_fail': throwPatchFail,
+      'patch_flyi': patchFlyi,
+      'ps_debug': psDebug,
       'mod_logs': modLogs,
       'modules': modules,
     };
@@ -1878,6 +1898,36 @@ class AppController extends ChangeNotifier {
 
   void setPatchless(bool value) {
     patchless = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setSkipPrivacy(bool value) {
+    skipPrivacy = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setThrowPatchFail(bool value) {
+    throwPatchFail = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setNoAutologin(bool value) {
+    noAutologin = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPatchFlyi(bool value) {
+    patchFlyi = value;
+    notifyListeners();
+    saveConfig();
+  }
+
+  void setPsDebug(bool value) {
+    psDebug = value;
     notifyListeners();
     saveConfig();
   }

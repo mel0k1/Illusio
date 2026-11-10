@@ -22,7 +22,9 @@ Future<void> connectFlow(
     full = ServerFullInfo.fromMap(info['info']);
   }
   final policy = full?.privacyPolicy;
-  if (policy != null && !controller.privacyAccepted(policy)) {
+  if (!controller.skipPrivacy &&
+      policy != null &&
+      !controller.privacyAccepted(policy)) {
     if (!context.mounted) {
       return;
     }

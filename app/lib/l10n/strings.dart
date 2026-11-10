@@ -651,6 +651,30 @@ class S {
       : 'send a different user id to the server instead of the real one';
   String get adminGuidValueLabel =>
       ru ? 'GUID (32 hex-символа)' : 'GUID (32 hex characters)';
+  String get skipPrivacyLabel =>
+      ru ? 'Пропускать privacy policy' : 'Skip privacy policy';
+  String get skipPrivacyHint => ru
+      ? 'не требовать принятия политики сервера при подключении'
+      : 'do not require accepting the server privacy policy on connect';
+  String get throwPatchFailLabel =>
+      ru ? 'Падать при ошибке патча' : 'Throw on patch fail';
+  String get throwPatchFailHint => ru
+      ? 'останавливать запуск, если встроенный патч не применился'
+      : 'abort the launch when a built-in patch fails to apply';
+  String get noAutologinLabel =>
+      ru ? 'Не входить автоматически' : 'Disable auto-login';
+  String get noAutologinHint => ru
+      ? 'не обновлять аккаунты при старте лаунчера'
+      : 'do not refresh accounts on launcher startup';
+  String get patchFlyiLabel =>
+      ru ? 'flYi: форс admin GUID' : 'flYi: force admin GUID';
+  String get patchFlyiHint => ru
+      ? 'патч AdminInfoSystem клиента, использует GUID из поля выше'
+      : 'patches client AdminInfoSystem, uses the GUID field above';
+  String get psDebugLabel => ru ? 'Отладка UDP-релея' : 'UDP relay debug';
+  String get psDebugHint => ru
+      ? 'печатать состояние UDP-релея прокси при запуске'
+      : 'print the proxy UDP relay state on launch';
   String get modLogsLabel => ru ? 'Журнал модов' : 'Mod log';
   String get modLogsHint => ru
       ? 'писать mods.log в папку логов: какие моды и модули загрузились'

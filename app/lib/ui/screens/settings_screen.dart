@@ -833,12 +833,26 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               const SizedBox(height: 8),
               _SwitchRow(
+                title: s.skipPrivacyLabel,
+                subtitle: s.skipPrivacyHint,
+                value: controller.skipPrivacy,
+                onChanged: controller.setSkipPrivacy,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.throwPatchFailLabel,
+                subtitle: s.throwPatchFailHint,
+                value: controller.throwPatchFail,
+                onChanged: controller.setThrowPatchFail,
+              ),
+              const SizedBox(height: 8),
+              _SwitchRow(
                 title: s.adminGuidLabel,
                 subtitle: s.adminGuidHint,
                 value: controller.adminGuid,
                 onChanged: controller.setAdminGuid,
               ),
-              if (controller.adminGuid) ...[
+              if (controller.adminGuid || controller.patchFlyi) ...[
                 const SizedBox(height: 8),
                 TextField(
                   controller: _adminGuid,
@@ -850,6 +864,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   onChanged: controller.setAdminGuidValue,
                 ),
               ],
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.patchFlyiLabel,
+                subtitle: s.patchFlyiHint,
+                value: controller.patchFlyi,
+                onChanged: controller.setPatchFlyi,
+              ),
             ],
           ),
         ),
@@ -1214,6 +1235,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                 value: controller.proxyGuardLaunch,
                 onChanged: controller.setProxyGuardLaunch,
               ),
+              const SizedBox(height: 8),
+              _SwitchRow(
+                title: s.psDebugLabel,
+                subtitle: s.psDebugHint,
+                value: controller.psDebug,
+                onChanged: controller.setPsDebug,
+              ),
               if (_proxyResult.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -1278,6 +1306,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   s.overrideName,
                   hint: s.overrideNameHint,
                 ),
+              ),
+              const SizedBox(height: 14),
+              _SwitchRow(
+                title: s.noAutologinLabel,
+                subtitle: s.noAutologinHint,
+                value: controller.noAutologin,
+                onChanged: controller.setNoAutologin,
               ),
               const SizedBox(height: 14),
               FilledButton.tonalIcon(

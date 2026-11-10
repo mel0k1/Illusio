@@ -104,6 +104,12 @@ pub struct LaunchSpec {
     pub admin_guid: bool,
     #[serde(default, rename = "admin_guid_value")]
     pub admin_guid_value: String,
+    #[serde(default, rename = "throw_patch_fail")]
+    pub throw_patch_fail: bool,
+    #[serde(default, rename = "patch_flyi")]
+    pub patch_flyi: bool,
+    #[serde(default, rename = "ps_debug")]
+    pub ps_debug: bool,
     #[serde(default, rename = "mod_logs")]
     pub mod_logs: bool,
     #[serde(default, rename = "modules")]
@@ -299,6 +305,18 @@ fn clean_list(values: &[String]) -> Vec<String> {
 
 pub fn build_env(spec: &LaunchSpec) -> Vec<(String, String)> {
     let mut env = Vec::new();
+    if spec.throw_patch_fail {
+        env.push(("ILLUSIO_THROW_ON_FAIL".into(), "1".into()));
+    }
+    if spec.ps_debug {
+        env.push(("ILLUSIO_PS_DEBUG".into(), "1".into()));
+    }
+    if spec.patch_flyi {
+        if let Some(guid) = normalize_guid(&spec.admin_guid_value) {
+            env.push(("ILLUSIO_FLYI".into(), "1".into()));
+            env.push(("ILLUSIO_FLYI_VALUE".into(), guid));
+        }
+    }
     let token = spec.auth_token.trim();
     if token.is_empty() {
         return env;
@@ -507,7 +525,7 @@ fn apply_proxy_env(command: &mut Command, proxy: &ProxyConfig) {
     }
 }
 
-fn prepare_relay(proxy: &ProxyConfig, args: &mut [String]) -> Option<PreparedRelay> {
+fn prepare_relay(proxy: &ProxyConfig, args: &mut [String], debug: bool) -> Option<PreparedRelay> {
     if !proxy.udp_relay {
         return None;
     }
@@ -516,10 +534,21 @@ fn prepare_relay(proxy: &ProxyConfig, args: &mut [String]) -> Option<PreparedRel
     let (host, port) = parse_udp_address(&address)?;
     match prepare_udp_relay(proxy, &host, port) {
         Ok(relay) => {
+            if debug {
+                println!(
+                    "[ILLUSIO-PS] UDP-релей: игра 127.0.0.1:{}, цель {host}:{port}",
+                    relay.local_port
+                );
+            }
             args[index + 1] = format!("udp://127.0.0.1:{}", relay.local_port);
             Some(relay)
         }
-        Err(_) => None,
+        Err(error) => {
+            if debug {
+                println!("[ILLUSIO-PS] UDP-релей недоступен: {error}");
+            }
+            None
+        }
     }
 }
 
@@ -572,7 +601,7 @@ pub fn launch(spec: &LaunchSpec) -> Result<u32, String> {
         return Err(format!("клиент не найден: {}", path.display()));
     }
     let mut args = build_args(spec);
-    let relay = prepare_relay(&proxy, &mut args);
+    let relay = prepare_relay(&proxy, &mut args, spec.ps_debug);
     let mut command = Command::new(&path);
     command.args(&args);
     apply_streams(&mut command, &spec.log_dir);
@@ -612,7 +641,7 @@ fn launch_loader(spec: &LaunchSpec, proxy: &ProxyConfig) -> Result<u32, String> 
         return Err("у сборки движка нет подписи".into());
     }
     let mut args = build_args(spec);
-    let relay = prepare_relay(proxy, &mut args);
+    let relay = prepare_relay(proxy, &mut args, spec.ps_debug);
     let mut command = Command::new(&loader);
     command.arg(&engine_zip).arg(sig).arg(&pubkey).args(&args);
     apply_streams(&mut command, &spec.log_dir);

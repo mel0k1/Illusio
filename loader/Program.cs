@@ -381,6 +381,8 @@ internal static class BuiltInPatches
             PatchJamDials(harmony);
         if (Flag("ILLUSIO_PATCH_BLACKHOLE"))
             PatchBlackhole(harmony);
+        if (Flag("ILLUSIO_FLYI"))
+            PatchFlyi(harmony);
     }
 
     private static bool Flag(string name)
@@ -512,6 +514,44 @@ internal static class BuiltInPatches
             harmony.Patch(execute, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(BlackholePrefix)));
 
         Console.WriteLine("[ILLUSIO-PATCH] BLACKHOLE: удалённые команды фильтруются");
+    }
+
+    private static void PatchFlyi(Harmony harmony)
+    {
+        var flyi = AccessTools.TypeByName(
+            "Content.Client.Administration.Systems.AdminInfoSystem");
+        if (flyi == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] FLYI: тип не найден");
+            return;
+        }
+
+        var guid = (Envsey.Get("ILLUSIO_FLYI_VALUE") ?? "").Trim();
+        if (!Guid.TryParse(guid, out _))
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] FLYI: GUID не задан или неверен");
+            return;
+        }
+
+        var method = AccessTools.Method(flyi, "i");
+        if (method == null)
+        {
+            Console.WriteLine("[ILLUSIO-PATCH] FLYI: метод не найден");
+            return;
+        }
+
+        harmony.Patch(method, prefix: new HarmonyMethod(typeof(BuiltInPatches), nameof(FlyiPrefix)));
+        Console.WriteLine("[ILLUSIO-PATCH] FLYI: admin GUID форсируется");
+    }
+
+    public static void FlyiPrefix(ref Guid p)
+    {
+        var guid = (Envsey.Get("ILLUSIO_FLYI_VALUE") ?? "").Trim();
+        if (Guid.TryParse(guid, out var spoofed) && spoofed != p)
+        {
+            Console.WriteLine($"[ILLUSIO-PATCH] FLYI: {p} -> {spoofed}");
+            p = spoofed;
+        }
     }
 
     private static byte[] RandomBytes(int length)
@@ -706,7 +746,7 @@ internal class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ILLUSIO-PATCH] ошибка встроенных патчей: {e.Message}");
+            Fail("ILLUSIO-PATCH", e);
         }
 
         try
@@ -715,7 +755,7 @@ internal class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ILLUSIO-STEALTH] ошибка скрытия: {e.Message}");
+            Fail("ILLUSIO-STEALTH", e);
         }
     }
 
@@ -728,7 +768,7 @@ internal class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ILLUSIO-SUBVERT] ошибка сайдлоада: {e.Message}");
+            Fail("ILLUSIO-SUBVERT", e);
         }
 
         try
@@ -737,7 +777,17 @@ internal class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ILLUSIO-RESPACK] ошибка ресурс-паков: {e.Message}");
+            Fail("ILLUSIO-RESPACK", e);
+        }
+    }
+
+    private void Fail(string tag, Exception e)
+    {
+        Console.WriteLine($"[{tag}] ошибка: {e.Message}");
+        if (Envsey.Get("ILLUSIO_THROW_ON_FAIL") == "1")
+        {
+            Console.WriteLine($"[{tag}] ILLUSIO_THROW_ON_FAIL включён — остановка запуска");
+            Environment.Exit(87);
         }
     }
 
@@ -751,7 +801,7 @@ internal class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ILLUSIO-BACKPORT] ошибка движковых бэкпортов: {e.Message}");
+            Fail("ILLUSIO-BACKPORT", e);
             return;
         }
 
