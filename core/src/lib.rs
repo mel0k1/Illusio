@@ -212,6 +212,27 @@ pub extern "C" fn illusio_download_state() -> *mut c_char {
     })
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn illusio_start_verify(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<install::VerifySpec>(&read_ptr(raw)) {
+            Ok(spec) => match install::start_verify(spec) {
+                Ok(()) => serde_json::json!({"ok": true}).to_string(),
+                Err(message) => serde_json::json!({
+                    "ok": false,
+                    "error": message,
+                })
+                .to_string(),
+            },
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
 #[derive(Deserialize)]
 struct AuthPayload {
     #[serde(default)]
@@ -822,6 +843,17 @@ pub unsafe extern "C" fn illusio_release_install(raw: *const c_char) -> *mut c_c
             .to_string(),
         },
     )
+}
+
+#[no_mangle]
+pub extern "C" fn illusio_release_progress() -> *mut c_char {
+    guarded(|| {
+        serde_json::json!({
+            "ok": true,
+            "state": update::release_progress(),
+        })
+        .to_string()
+    })
 }
 
 #[no_mangle]

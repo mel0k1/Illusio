@@ -202,7 +202,9 @@ class _DownloadBody extends StatelessWidget {
     final color = failed ? scheme.error : scheme.onSurfaceVariant;
     final showBar = state.phase == 'engine' ||
         state.phase == 'download' ||
-        state.phase == 'extract';
+        state.phase == 'extract' ||
+        state.phase == 'verify' ||
+        state.phase == 'repair';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,7 +281,9 @@ class DownloadInline extends StatelessWidget {
     final scheme = theme.colorScheme;
     final showBar = state.phase == 'engine' ||
         state.phase == 'download' ||
-        state.phase == 'extract';
+        state.phase == 'extract' ||
+        state.phase == 'verify' ||
+        state.phase == 'repair';
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(

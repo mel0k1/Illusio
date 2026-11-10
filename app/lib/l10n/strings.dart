@@ -566,6 +566,8 @@ class S {
   String get phaseEngine => ru ? 'Загружаем движок' : 'Downloading engine';
   String get phaseClient => ru ? 'Загружаем клиент' : 'Downloading client';
   String get phaseExtract => ru ? 'Распаковываем' : 'Extracting';
+  String get phaseVerify =>
+      ru ? 'Проверяем файлы клиента' : 'Verifying client files';
   String get phaseReady => ru ? 'Клиент готов' : 'Client ready';
   String get busyRequest =>
       ru ? 'запрос уже выполняется' : 'a request is already running';
@@ -618,6 +620,14 @@ class S {
   String get enginesDelete => ru ? 'Удалить движок' : 'Delete engine';
   String enginesFailed(String error) =>
       ru ? 'Ошибка движков: $error' : 'Engine error: $error';
+  String get verifyFiles =>
+      ru ? 'Проверить файлы клиента' : 'Verify client files';
+  String get verifying => ru ? 'Проверяем…' : 'Verifying…';
+  String get verifyHint => ru
+      ? 'сверяет файлы установки с манифестом сборки и докачивает повреждённые или пропавшие'
+      : 'compares installed files with the build manifest and re-downloads damaged or missing ones';
+  String verifyFailed(String error) =>
+      ru ? 'Проверка не удалась: $error' : 'Verification failed: $error';
   String get backportsLabel => ru ? 'Бэкпорты' : 'Backports';
   String get backportsHint => ru
       ? 'версионно-гейтед патчи: применяются только к совместимым версиям движка и форка'

@@ -195,6 +195,10 @@ class DownloadStateInfo {
         return s.phaseClient;
       case 'extract':
         return message.isEmpty ? s.phaseExtract : message;
+      case 'verify':
+        return message.isEmpty ? s.phaseVerify : message;
+      case 'repair':
+        return message.isEmpty ? s.phaseVerify : message;
       case 'done':
         return message.isEmpty ? s.phaseReady : message;
       case 'error':

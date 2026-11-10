@@ -115,6 +115,12 @@ class AppController extends ChangeNotifier {
   bool releasesLoaded = false;
   bool releaseApplied = false;
   String releasesError = '';
+  int installingRelease = -1;
+  double releaseProgressValue = 0;
+  String releaseProgressLabel = '';
+  bool verifying = false;
+  String verifyResult = '';
+  String verifyError = '';
   Timer? _refreshTimer;
   Timer? _prefetchTimer;
   Timer? _ipcTimer;
@@ -1356,15 +1362,81 @@ class AppController extends ChangeNotifier {
       return;
     }
     releasesBusy = true;
+    installingRelease = index;
+    releaseProgressValue = 0;
+    releaseProgressLabel = '';
     releasesError = '';
     notifyListeners();
-    final payload = jsonEncode({'url': url, 'name': name});
-    final result = await Isolate.run(() => Core.releaseInstall(payload));
-    releasesBusy = false;
-    if (result['ok'] == true) {
-      releaseApplied = true;
-    } else {
-      releasesError = result['error']?.toString() ?? '';
+    final poll = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      final snap = Core.releaseProgress();
+      if (snap['ok'] != true) {
+        return;
+      }
+      final state = snap['state'];
+      if (state is! Map) {
+        return;
+      }
+      final total = (state['total'] as num?)?.toInt() ?? 0;
+      final downloaded = (state['downloaded'] as num?)?.toInt() ?? 0;
+      releaseProgressValue = total > 0
+          ? (downloaded / total).clamp(0.0, 1.0).toDouble()
+          : 0;
+      releaseProgressLabel = state['message']?.toString() ?? '';
+      notifyListeners();
+    });
+    try {
+      final payload = jsonEncode({'url': url, 'name': name});
+      final result = await Isolate.run(() => Core.releaseInstall(payload));
+      if (result['ok'] == true) {
+        releaseApplied = true;
+      } else {
+        releasesError = result['error']?.toString() ?? '';
+      }
+    } finally {
+      poll.cancel();
+      releasesBusy = false;
+      installingRelease = -1;
+      releaseProgressLabel = '';
+      notifyListeners();
+    }
+  }
+
+  Future<void> verifyFiles() async {
+    if (verifying || downloadState.running) {
+      return;
+    }
+    verifying = true;
+    verifyResult = '';
+    verifyError = '';
+    notifyListeners();
+    final payload = jsonEncode({
+      'server_url': selectedServer?.url ?? '',
+      'install_dir': installDir,
+    });
+    final started = await Isolate.run(() => Core.startVerify(payload));
+    if (started['ok'] != true) {
+      verifying = false;
+      verifyError = started['error']?.toString() ?? '';
+      notifyListeners();
+      return;
+    }
+    while (true) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      final result = await Isolate.run(Core.downloadState);
+      if (result['ok'] != true) {
+        continue;
+      }
+      downloadState = DownloadStateInfo.fromMap(result['state']);
+      notifyListeners();
+      if (downloadState.isDone || downloadState.isError) {
+        break;
+      }
+    }
+    verifying = false;
+    if (downloadState.isDone) {
+      verifyResult = downloadState.message;
+    } else if (downloadState.isError) {
+      verifyError = downloadState.error;
     }
     notifyListeners();
   }

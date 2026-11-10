@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 fn version_parts(value: &str) -> Vec<u64> {
@@ -212,16 +213,98 @@ pub fn list_releases(current_version: &str) -> Result<Vec<ReleaseEntry>, String>
     parse_releases(&body, current_version)
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ReleaseState {
+    pub phase: String,
+    pub downloaded: u64,
+    pub total: u64,
+    pub message: String,
+    pub error: String,
+    pub running: bool,
+}
+
+struct ReleaseJob {
+    state: Mutex<ReleaseState>,
+}
+
+static RELEASE_JOB: OnceLock<ReleaseJob> = OnceLock::new();
+
+fn release_job() -> &'static ReleaseJob {
+    RELEASE_JOB.get_or_init(|| ReleaseJob {
+        state: Mutex::new(ReleaseState::default()),
+    })
+}
+
+fn set_release_state(patch: impl FnOnce(&mut ReleaseState)) {
+    if let Ok(mut state) = release_job().state.lock() {
+        patch(&mut state);
+    }
+}
+
+pub fn release_progress() -> ReleaseState {
+    release_job()
+        .state
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or_default()
+}
+
 pub fn install_release(asset_url: &str, asset_name: &str) -> Result<(), String> {
     if asset_url.trim().is_empty() || asset_name.trim().is_empty() {
+        set_release_state(|state| {
+            state.phase = "error".into();
+            state.error = "не указан файл релиза".into();
+            state.running = false;
+        });
         return Err("не указан файл релиза".into());
     }
-    let archive = download_asset(
+    set_release_state(|state| {
+        state.phase = "download".into();
+        state.downloaded = 0;
+        state.total = 0;
+        state.message = "загружаем сборку лаунчера".into();
+        state.error = String::new();
+        state.running = true;
+    });
+    let archive = match download_asset(
         asset_url,
         &std::env::temp_dir().join("illusio-update"),
         asset_name,
-    )?;
-    apply(&archive)
+    ) {
+        Ok(value) => value,
+        Err(message) => {
+            set_release_state(|state| {
+                state.phase = "error".into();
+                state.error = message.clone();
+                state.running = false;
+            });
+            return Err(message);
+        }
+    };
+    set_release_state(|state| {
+        state.phase = "install".into();
+        state.downloaded = 0;
+        state.total = 0;
+        state.message = "устанавливаем обновление".into();
+    });
+    match apply(&archive) {
+        Ok(()) => {
+            set_release_state(|state| {
+                state.phase = "done".into();
+                state.message = "обновление установлено".into();
+                state.running = false;
+            });
+            Ok(())
+        }
+        Err(message) => {
+            set_release_state(|state| {
+                state.phase = "error".into();
+                state.error = message.clone();
+                state.running = false;
+            });
+            Err(message)
+        }
+    }
 }
 
 pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf, String> {
@@ -238,8 +321,19 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
         .map_err(|error| error.to_string())?
         .error_for_status()
         .map_err(|error| format!("GitHub ответил с ошибкой: {error}"))?;
+    let total = response
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    set_release_state(|state| {
+        state.total = total;
+        state.downloaded = 0;
+    });
     let mut file = fs::File::create(&dest).map_err(|error| error.to_string())?;
     let mut buffer = [0u8; 65_536];
+    let mut downloaded: u64 = 0;
     loop {
         let read = response
             .read(&mut buffer)
@@ -249,6 +343,8 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
         }
         file.write_all(&buffer[..read])
             .map_err(|error| error.to_string())?;
+        downloaded += read as u64;
+        set_release_state(|state| state.downloaded = downloaded);
     }
     file.flush().map_err(|error| error.to_string())?;
     Ok(dest)

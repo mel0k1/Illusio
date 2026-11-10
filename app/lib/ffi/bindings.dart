@@ -114,6 +114,12 @@ class Core {
   static final Pointer<Utf8> Function(Pointer<Utf8>) _releaseInstall = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_release_install')
       .asFunction();
+  static final Pointer<Utf8> Function() _releaseProgress = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_release_progress')
+      .asFunction();
+  static final Pointer<Utf8> Function(Pointer<Utf8>) _startVerify = _lib
+      .lookup<NativeFunction<TakeStringNative>>('illusio_start_verify')
+      .asFunction();
   static final Pointer<Utf8> Function() _updateFinalize = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_update_finalize')
       .asFunction();
@@ -235,6 +241,11 @@ class Core {
 
   static Map<String, dynamic> releaseInstall(String json) =>
       _withString(json, _releaseInstall);
+
+  static Map<String, dynamic> releaseProgress() => _run(_releaseProgress);
+
+  static Map<String, dynamic> startVerify(String json) =>
+      _withString(json, _startVerify);
 
   static Map<String, dynamic> updateFinalize() => _run(_updateFinalize);
 

@@ -1009,6 +1009,89 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ],
               ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed:
+                        controller.verifying ? null : controller.verifyFiles,
+                    icon: controller.verifying
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.fact_check_outlined, size: 18),
+                    label: Text(
+                      controller.verifying ? s.verifying : s.verifyFiles,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                s.verifyHint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              if (controller.verifying &&
+                  (controller.downloadState.phase == 'verify' ||
+                      controller.downloadState.phase == 'repair')) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        controller.downloadState.message,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (controller.downloadState.progress != null)
+                      Text(
+                        '${((controller.downloadState.progress ?? 0) * 100).round()}%',
+                        style: theme.textTheme.labelMedium,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(
+                    end: (controller.downloadState.progress ?? 0)
+                        .clamp(0.0, 1.0)
+                        .toDouble(),
+                  ),
+                  duration: spatialDefault,
+                  curve: expressCurve,
+                  builder: (context, value, _) => LinearProgressIndicator(
+                    value: (controller.downloadState.progress ?? 0) > 0
+                        ? value
+                        : null,
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(3),
+                    backgroundColor: scheme.surfaceContainerHighest,
+                  ),
+                ),
+              ],
+              if (controller.verifyResult.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  controller.verifyResult,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+              ],
+              if (controller.verifyError.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  s.verifyFailed(controller.verifyError),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               _SwitchRow(
                 title: s.clientLogs,
@@ -1374,6 +1457,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     AppController controller,
     S s,
     Map<String, dynamic> release,
+    int index,
     ThemeData theme,
     ColorScheme scheme,
   ) {
@@ -1432,7 +1516,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ? null
                   : () => _confirmInstall(controller, s, version),
               child: Text(
-                controller.releasesBusy ? s.versionsLoading : s.versionInstall,
+                controller.installingRelease == index
+                    ? '${(controller.releaseProgressValue * 100).round()}%'
+                    : controller.releasesBusy
+                        ? s.versionsLoading
+                        : s.versionInstall,
               ),
             ),
         ],
@@ -1589,10 +1677,61 @@ class _SettingsScreenState extends State<SettingsScreen>
               ] else if (controller.releases.isEmpty) ...[
                 Text(s.versionsEmpty, style: theme.textTheme.bodySmall),
               ] else ...[
-                ...controller.releases.map(
-                  (release) =>
-                      _releaseRow(controller, s, release, theme, scheme),
-                ),
+                ...List.generate(controller.releases.length, (index) {
+                  final release = controller.releases[index];
+                  return _releaseRow(
+                    controller,
+                    s,
+                    release,
+                    index,
+                    theme,
+                    scheme,
+                  );
+                }),
+                if (controller.releasesBusy) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          controller.releaseProgressLabel.isEmpty
+                              ? s.versionsLoading
+                              : controller.releaseProgressLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '${(controller.releaseProgressValue * 100).round()}%',
+                        style: theme.textTheme.labelMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(
+                      end: controller.releaseProgressValue
+                          .clamp(0.0, 1.0)
+                          .toDouble(),
+                    ),
+                    duration: spatialDefault,
+                    curve: expressCurve,
+                    builder: (context, value, _) => LinearProgressIndicator(
+                      value: controller.releaseProgressValue > 0 ? value : null,
+                      minHeight: 6,
+                      borderRadius: BorderRadius.circular(3),
+                      backgroundColor: scheme.surfaceContainerHighest,
+                    ),
+                  ),
+                ],
               ],
               if (controller.releasesError.isNotEmpty) ...[
                 const SizedBox(height: 12),

@@ -167,6 +167,10 @@ pub struct StoredBuild {
     pub engine_zip: String,
     #[serde(default, rename = "engineSig")]
     pub engine_sig: String,
+    #[serde(default, rename = "manifestUrl")]
+    pub manifest_url: String,
+    #[serde(default, rename = "manifestDownloadUrl")]
+    pub manifest_download_url: String,
 }
 
 pub fn marker_path(dir: &Path) -> PathBuf {
@@ -380,6 +384,226 @@ pub fn content_state(server_url: &str, install_dir_raw: &str) -> Result<bool, St
     })
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct VerifySpec {
+    #[serde(default, rename = "server_url")]
+    pub server_url: String,
+    #[serde(default, rename = "install_dir")]
+    pub install_dir: String,
+}
+
+pub fn start_verify(spec: VerifySpec) -> Result<(), String> {
+    let server_url = spec.server_url.trim().to_string();
+    let install_dir = spec.install_dir.trim().to_string();
+    let mut state = job().state.lock().map_err(|_| "загрузчик недоступен")?;
+    if state.running {
+        return Err("загрузка уже идёт".into());
+    }
+    state.phase = "verify".into();
+    state.message = String::new();
+    state.error = String::new();
+    state.downloaded = 0;
+    state.total = 0;
+    state.install_dir = install_dir.clone();
+    state.info = None;
+    state.bundle_zip = String::new();
+    state.mode = String::new();
+    state.engine_zip = String::new();
+    state.content_zip = String::new();
+    state.engine_sig = String::new();
+    state.running = true;
+    drop(state);
+    thread::spawn(move || {
+        let result = verify_job(&VerifySpec {
+            server_url,
+            install_dir,
+        });
+        match result {
+            Ok(message) => set_state(|state| {
+                state.phase = "done".into();
+                state.message = message;
+                state.running = false;
+            }),
+            Err(message) => set_state(|state| {
+                state.phase = "error".into();
+                state.error = message;
+                state.running = false;
+            }),
+        }
+    });
+    Ok(())
+}
+
+fn find_installed_marker(root: &Path) -> Result<(PathBuf, StoredBuild), String> {
+    let entries = fs::read_dir(root).map_err(|error| error.to_string())?;
+    let mut best: Option<(PathBuf, StoredBuild)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if matches!(name, "engine" | "bundles" | "logs" | "tools") {
+            continue;
+        }
+        let Some(stored) = read_marker(&path) else {
+            continue;
+        };
+        let replace = match best.as_ref() {
+            None => true,
+            Some((_, current)) => stored.acz && !current.acz,
+        };
+        if replace {
+            best = Some((path, stored));
+        }
+    }
+    best.ok_or_else(|| "установка не найдена: сначала подключитесь к серверу".into())
+}
+
+fn verify_job(spec: &VerifySpec) -> Result<String, String> {
+    let install_dir_raw = spec.install_dir.trim();
+    if install_dir_raw.is_empty() {
+        return Err("не указан каталог установки".into());
+    }
+    set_state(|state| {
+        state.message = "ищем установленную сборку".into();
+    });
+    let root = resolve_install_root(install_dir_raw)?;
+    let (target, stored) = find_installed_marker(&root)?;
+
+    if !stored.acz {
+        return Ok(
+            "установка из zip: целостность подтверждает маркер сборки, проверять нечего".into(),
+        );
+    }
+
+    let mut build: Option<ServerBuild> = None;
+    let server_url = spec.server_url.trim();
+    if !server_url.is_empty() {
+        set_state(|state| {
+            state.message = "получаем данные сервера".into();
+        });
+        let info = fetch_info(server_url)?;
+        build = Some(info.build.clone());
+    }
+
+    let manifest_url = if !stored.manifest_url.trim().is_empty() {
+        stored.manifest_url.trim().to_string()
+    } else {
+        match build.as_ref().map(|value| value.manifest_url.trim()) {
+            Some(url) if !url.is_empty() => url.to_string(),
+            _ => {
+                return Err(
+                    "в маркере нет адреса манифеста: подключитесь к серверу этой сборки и повторите"
+                        .into(),
+                );
+            }
+        }
+    };
+    let manifest_download_url = if !stored.manifest_download_url.trim().is_empty() {
+        stored.manifest_download_url.trim().to_string()
+    } else {
+        match build
+            .as_ref()
+            .map(|value| value.manifest_download_url.trim())
+        {
+            Some(url) if !url.is_empty() => url.to_string(),
+            _ => {
+                return Err(
+                    "в маркере нет адреса загрузки: подключитесь к серверу этой сборки и повторите"
+                        .into(),
+                );
+            }
+        }
+    };
+
+    let expected_hash = if !stored.manifest_hash.trim().is_empty() {
+        stored.manifest_hash.trim().to_string()
+    } else {
+        build
+            .as_ref()
+            .map(|value| value.manifest_hash.trim().to_string())
+            .unwrap_or_default()
+    };
+
+    set_state(|state| {
+        state.message = "читаем манифест контента".into();
+    });
+    let (entries, manifest_hash) = acz::fetch_manifest(&manifest_url)?;
+    if !expected_hash.is_empty() && !manifest_hash.eq_ignore_ascii_case(&expected_hash) {
+        return Err("манифест на сервере изменился — подключитесь к серверу для обновления".into());
+    }
+
+    let fork_name = acz::sanitize_dir_name(&stored.fork_id);
+    let blobs = acz::blobs_dir(&cache_root()?, &fork_name);
+    let unique = acz::unique_entries(&entries);
+    let total = unique.len();
+
+    set_state(|state| {
+        state.downloaded = 0;
+        state.total = total as u64;
+        state.message = format!("проверяем файлы 0/{total}");
+    });
+    let mut broken: Vec<acz::ManifestEntry> = Vec::new();
+    for (checked, entry) in unique.iter().enumerate() {
+        let path = blobs.join(format!("{}.bin", entry.hash_hex));
+        let healthy = fs::read(&path)
+            .map(|data| !data.is_empty() && acz::blake2b_hex(&data) == entry.hash_hex)
+            .unwrap_or(false);
+        if !healthy {
+            broken.push(entry.clone());
+        }
+        if (checked + 1) % 32 == 0 || checked + 1 == total {
+            let done = checked + 1;
+            set_state(|state| {
+                state.downloaded = done as u64;
+                state.message = format!("проверяем файлы {done}/{total}");
+            });
+        }
+    }
+
+    if broken.is_empty() {
+        return Ok(format!("все файлы целы ({total})"));
+    }
+
+    let broken_total = broken.len();
+    set_state(|state| {
+        state.downloaded = 0;
+        state.total = broken_total as u64;
+        state.phase = "verify".into();
+        state.message = format!("повреждено или отсутствует {broken_total} из {total}");
+    });
+    let client = download_client()?;
+    acz::check_download_protocol(&client, &manifest_download_url)?;
+    let mut done: u64 = 0;
+    acz::download_blobs(&client, &manifest_download_url, &broken, |blob| {
+        acz::write_blob_cache(&blobs, &blob.hash_hex, &blob.data)?;
+        done += 1;
+        let current = done;
+        set_state(|state| {
+            state.downloaded = current;
+            state.message = format!("докачиваем файлы {current}/{broken_total}");
+        });
+        Ok(())
+    })?;
+
+    set_state(|state| {
+        state.downloaded = 0;
+        state.total = total as u64;
+        state.message = "собираем клиент".into();
+    });
+    fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    let content_zip = target.join("content.zip");
+    acz::assemble_overlay_zip(&entries, &blobs, &content_zip, |finished| {
+        set_state(|state| state.downloaded = finished);
+    })?;
+
+    Ok(format!("исправлено {broken_total} из {total} файлов"))
+}
+
 fn run_job(spec: DownloadSpec) {
     let result = if spec.bundle_zip.trim().is_empty() {
         execute(&spec.server_url, &spec.install_dir)
@@ -489,6 +713,8 @@ fn execute(
                         acz: true,
                         engine_zip: payload.engine_zip.display().to_string(),
                         engine_sig: payload.engine_sig.clone(),
+                        manifest_url: build.manifest_url.clone(),
+                        manifest_download_url: build.manifest_download_url.clone(),
                     },
                 )?;
                 set_state(|state| {
@@ -1125,6 +1351,8 @@ mod tests {
             acz: true,
             engine_zip: "/cache/engine.zip".into(),
             engine_sig: "sig".into(),
+            manifest_url: "https://example.test/manifest.yml".into(),
+            manifest_download_url: "https://example.test/download".into(),
         };
         write_marker(&dir, &build).unwrap();
         let read = read_marker(&dir).unwrap();
@@ -1134,6 +1362,8 @@ mod tests {
         assert_eq!(read.engine_version, "240.1.0.5");
         assert_eq!(read.engine_zip, "/cache/engine.zip");
         assert_eq!(read.engine_sig, "sig");
+        assert_eq!(read.manifest_url, "https://example.test/manifest.yml");
+        assert_eq!(read.manifest_download_url, "https://example.test/download");
         assert!(read.acz);
         fs::remove_dir_all(&dir).ok();
     }
