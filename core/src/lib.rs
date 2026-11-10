@@ -562,6 +562,14 @@ struct VersionPayload {
     prerelease: bool,
 }
 
+#[derive(Deserialize)]
+struct InstallPayload {
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    name: String,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn illusio_proxy_session(raw: *const c_char) -> *mut c_char {
     guarded(
@@ -765,6 +773,48 @@ pub unsafe extern "C" fn illusio_self_update(raw: *const c_char) -> *mut c_char 
                     .to_string(),
                 }
             }
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_releases_list(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<VersionPayload>(&read_ptr(raw)) {
+            Ok(payload) => match update::list_releases(&payload.current) {
+                Ok(releases) => serde_json::json!({"ok": true, "releases": releases}).to_string(),
+                Err(message) => serde_json::json!({
+                    "ok": false,
+                    "error": message,
+                })
+                .to_string(),
+            },
+            Err(message) => serde_json::json!({
+                "ok": false,
+                "error": message.to_string(),
+            })
+            .to_string(),
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn illusio_release_install(raw: *const c_char) -> *mut c_char {
+    guarded(
+        || match serde_json::from_str::<InstallPayload>(&read_ptr(raw)) {
+            Ok(payload) => match update::install_release(&payload.url, &payload.name) {
+                Ok(()) => serde_json::json!({"ok": true}).to_string(),
+                Err(message) => serde_json::json!({
+                    "ok": false,
+                    "error": message,
+                })
+                .to_string(),
+            },
             Err(message) => serde_json::json!({
                 "ok": false,
                 "error": message.to_string(),

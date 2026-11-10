@@ -55,20 +55,49 @@ pub struct ReleaseCheck {
 
 #[derive(Debug, Deserialize)]
 struct ReleasePayload {
-    #[serde(default, rename = "tag_name")]
+    #[serde(default, deserialize_with = "null_to_default", rename = "tag_name")]
     tag_name: String,
-    #[serde(default, rename = "body")]
+    #[serde(default, deserialize_with = "null_to_default", rename = "body")]
     body: String,
-    #[serde(default, rename = "assets")]
+    #[serde(default, deserialize_with = "null_to_default", rename = "prerelease")]
+    prerelease: bool,
+    #[serde(default, deserialize_with = "null_to_default", rename = "published_at")]
+    published_at: String,
+    #[serde(default, deserialize_with = "null_to_default", rename = "assets")]
     assets: Vec<AssetPayload>,
 }
 
 #[derive(Debug, Deserialize)]
 struct AssetPayload {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     name: String,
-    #[serde(default, rename = "browser_download_url")]
+    #[serde(
+        default,
+        deserialize_with = "null_to_default",
+        rename = "browser_download_url"
+    )]
     browser_download_url: String,
+}
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    let value: Option<T> = Option::deserialize(deserializer)?;
+    Ok(value.unwrap_or_default())
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ReleaseEntry {
+    pub version: String,
+    pub prerelease: bool,
+    pub published: String,
+    #[serde(rename = "assetName")]
+    pub asset_name: String,
+    #[serde(rename = "assetUrl")]
+    pub asset_url: String,
+    pub current: bool,
 }
 
 pub fn platform_asset_suffix() -> &'static str {
@@ -98,53 +127,110 @@ pub fn check(current_version: &str) -> Result<ReleaseCheck, String> {
 
 pub fn check_ex(current_version: &str, prerelease: bool) -> Result<ReleaseCheck, String> {
     let client = update_client()?;
-    let endpoint = if prerelease {
-        RELEASES_LIST_API
-    } else {
-        RELEASES_API
-    };
     let response = client
-        .get(endpoint)
+        .get(RELEASES_LIST_API)
         .send()
         .map_err(|error| error.to_string())?;
     let response = response
         .error_for_status()
         .map_err(|error| format!("GitHub ответил с ошибкой: {error}"))?;
-    let release: ReleasePayload = if prerelease {
-        let releases: Vec<ReleasePayload> = response
-            .json()
-            .map_err(|error| format!("не удалось разобрать релизы: {error}"))?;
-        releases
-            .into_iter()
-            .next()
-            .ok_or_else(|| "в канале pre-release пока нет ни одного релиза".to_string())?
-    } else {
-        response
-            .json()
-            .map_err(|error| format!("не удалось разобрать релиз: {error}"))?
-    };
-    let version = release.tag_name.trim().trim_start_matches('v').to_string();
+    let body = response.text().map_err(|error| error.to_string())?;
+    let releases: Vec<ReleasePayload> = serde_json::from_str(&body)
+        .map_err(|error| format!("не удалось разобрать релизы: {error}"))?;
     let suffix = platform_asset_suffix();
-    let asset = release
-        .assets
-        .iter()
-        .find(|value| value.name.ends_with(suffix) && !value.name.contains("setup"));
-    let Some(asset) = asset else {
+    let target = releases
+        .into_iter()
+        .filter(|release| prerelease || !release.prerelease)
+        .find(|release| pick_asset(&release.assets, suffix).is_some())
+        .ok_or_else(|| {
+            if prerelease {
+                "в канале pre-release пока нет ни одного релиза".to_string()
+            } else {
+                "в списке релизов нет сборки для этой платформы".to_string()
+            }
+        })?;
+    let version = target.tag_name.trim().trim_start_matches('v').to_string();
+    let Some(asset) = pick_asset(&target.assets, suffix) else {
         return Ok(ReleaseCheck::default());
     };
     let available = version_is_below(current_version, &version);
     Ok(ReleaseCheck {
         available,
         version,
-        notes: release.body,
+        notes: target.body,
         asset_name: asset.name.clone(),
         asset_url: asset.browser_download_url.clone(),
     })
 }
 
+fn pick_asset<'a>(assets: &'a [AssetPayload], suffix: &str) -> Option<&'a AssetPayload> {
+    assets
+        .iter()
+        .find(|value| value.name.ends_with(suffix) && !value.name.contains("setup"))
+}
+
+pub fn parse_releases(body: &str, current_version: &str) -> Result<Vec<ReleaseEntry>, String> {
+    let releases: Vec<ReleasePayload> = serde_json::from_str(body)
+        .map_err(|error| format!("не удалось разобрать релизы: {error}"))?;
+    let suffix = platform_asset_suffix();
+    let mut entries = Vec::new();
+    for release in releases {
+        let version = release.tag_name.trim().trim_start_matches('v').to_string();
+        if version.is_empty() {
+            continue;
+        }
+        let Some(asset) = pick_asset(&release.assets, suffix) else {
+            continue;
+        };
+        entries.push(ReleaseEntry {
+            current: version == current_version,
+            version,
+            prerelease: release.prerelease,
+            published: release
+                .published_at
+                .split('T')
+                .next()
+                .unwrap_or_default()
+                .to_string(),
+            asset_name: asset.name.clone(),
+            asset_url: asset.browser_download_url.clone(),
+        });
+    }
+    Ok(entries)
+}
+
+pub fn list_releases(current_version: &str) -> Result<Vec<ReleaseEntry>, String> {
+    let client = update_client()?;
+    let response = client
+        .get(RELEASES_LIST_API)
+        .send()
+        .map_err(|error| error.to_string())?;
+    let response = response
+        .error_for_status()
+        .map_err(|error| format!("GitHub ответил с ошибкой: {error}"))?;
+    let body = response.text().map_err(|error| error.to_string())?;
+    parse_releases(&body, current_version)
+}
+
+pub fn install_release(asset_url: &str, asset_name: &str) -> Result<(), String> {
+    if asset_url.trim().is_empty() || asset_name.trim().is_empty() {
+        return Err("не указан файл релиза".into());
+    }
+    let archive = download_asset(
+        asset_url,
+        &std::env::temp_dir().join("illusio-update"),
+        asset_name,
+    )?;
+    apply(&archive)
+}
+
 pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let clean = Path::new(name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "некорректное имя файла".to_string())?;
     fs::create_dir_all(dest_dir).map_err(|error| error.to_string())?;
-    let dest = dest_dir.join(name);
+    let dest = dest_dir.join(clean);
     let client = update_client()?;
     let mut response = client
         .get(url)
@@ -238,15 +324,20 @@ fn ps_escape(value: &str) -> String {
 }
 
 #[cfg(target_os = "linux")]
+fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(target_os = "linux")]
 fn apply_linux(archive: &Path, install: &Path, exe: &Path) -> Result<(), String> {
     let pid = std::process::id();
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
     let body = format!(
-        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\ntar -xzf '{archive}' -C '{install}'\nchmod +x '{exe}'\nnohup '{exe}' >/dev/null 2>&1 &\nrm -f \"$0\"\n",
-        archive = archive.display(),
-        install = install.display(),
-        exe = exe.display(),
+        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\ntar -xzf {archive} -C {install}\nchmod +x {exe}\nnohup {exe} >/dev/null 2>&1 &\nrm -f \"$0\"\n",
+        archive = sh_quote(&archive.display().to_string()),
+        install = sh_quote(&install.display().to_string()),
+        exe = sh_quote(&exe.display().to_string()),
     );
     fs::write(&script, body).map_err(|error| error.to_string())?;
     #[cfg(unix)]
@@ -261,6 +352,11 @@ fn apply_linux(archive: &Path, install: &Path, exe: &Path) -> Result<(), String>
 }
 
 #[cfg(target_os = "macos")]
+fn sh_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(target_os = "macos")]
 fn apply_macos(
     archive: &Path,
     extracted: &Path,
@@ -272,10 +368,10 @@ fn apply_macos(
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
     let body = format!(
-        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\nrm -rf '{app}'\nunzip -q -o '{zip}' -d '{dir}'\nopen '{app}'\nrm -f \"$0\"\n",
-        app = app_path.display(),
-        zip = archive.display(),
-        dir = app_dir.display(),
+        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\nrm -rf {app}\nunzip -q -o {zip} -d {dir}\nopen {app}\nrm -f \"$0\"\n",
+        app = sh_quote(&app_path.display().to_string()),
+        zip = sh_quote(&archive.display().to_string()),
+        dir = sh_quote(&app_dir.display().to_string()),
     );
     fs::write(&script, body).map_err(|error| error.to_string())?;
     #[cfg(unix)]
@@ -417,6 +513,47 @@ mod tests {
         } else {
             assert_eq!(suffix, "-linux-x64.tar.gz");
         }
+    }
+
+    #[test]
+    fn parses_release_list() {
+        let asset = platform_asset_suffix();
+        let body = format!(
+            r#"[
+            {{"tag_name":"v0.11.0","body":"- fixes","prerelease":true,"published_at":"2026-11-09T10:00:00Z","assets":[{{"name":"Illusio-0.11.0{asset}","browser_download_url":"https://example.com/a.zip"}}]}},
+            {{"tag_name":"v0.10.0","body":null,"prerelease":false,"published_at":null,"assets":null}},
+            {{"tag_name":"v0.9.0","body":"","prerelease":false,"published_at":"2026-10-01T10:00:00Z","assets":[{{"name":"Illusio-0.9.0-setup{asset}","browser_download_url":"https://example.com/s.zip"}}]}}
+        ]"#
+        );
+        let releases = parse_releases(&body, "0.9.0").unwrap();
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].version, "0.11.0");
+        assert!(releases[0].prerelease);
+        assert_eq!(releases[0].published, "2026-11-09");
+        assert_eq!(releases[0].asset_name, format!("Illusio-0.11.0{asset}"));
+        assert!(!releases[0].current);
+    }
+
+    #[test]
+    fn marks_current_release() {
+        let body = r#"[
+            {"tag_name":"v0.10.0","prerelease":false,"published_at":"2026-11-01T10:00:00Z","assets":[{"name":"Illusio-0.10.0-linux-x64.tar.gz","browser_download_url":"https://example.com/l.tar.gz"}]},
+            {"tag_name":"v0.9.0","prerelease":false,"published_at":"2026-10-01T10:00:00Z","assets":[{"name":"Illusio-0.9.0-linux-x64.tar.gz","browser_download_url":"https://example.com/o.tar.gz"}]}
+        ]"#;
+        let releases = parse_releases(body, "0.9.0").unwrap();
+        assert_eq!(releases.len(), 2);
+        assert!(!releases[0].current);
+        assert!(releases[1].current);
+    }
+
+    #[test]
+    fn rejects_path_names() {
+        assert!(download_asset(
+            "https://example.com/a.zip",
+            std::path::Path::new("/tmp"),
+            ".."
+        )
+        .is_err());
     }
 
     #[test]

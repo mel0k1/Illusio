@@ -1337,6 +1337,109 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Future<void> _confirmInstall(
+    AppController controller,
+    S s,
+    String version,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(s.installConfirmTitle(version)),
+        content: Text(s.installConfirmBody(version)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(s.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(s.versionInstall),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final index = controller.releases.indexWhere(
+      (entry) => entry['version'] == version,
+    );
+    if (index >= 0) {
+      await controller.installRelease(index);
+    }
+  }
+
+  Widget _releaseRow(
+    AppController controller,
+    S s,
+    Map<String, dynamic> release,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) {
+    final version = release['version']?.toString() ?? '';
+    final current = release['current'] == true;
+    final prerelease = release['prerelease'] == true;
+    final published = release['published']?.toString() ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'v$version',
+                        style: theme.textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (prerelease) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        s.versionPrerelease,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.tertiary,
+                        ),
+                      ),
+                    ],
+                    if (current) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        s.versionCurrent,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (published.isNotEmpty)
+                  Text(published, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (current)
+            Icon(Icons.check_circle_outline, size: 20, color: scheme.primary)
+          else
+            OutlinedButton(
+              onPressed: controller.releasesBusy
+                  ? null
+                  : () => _confirmInstall(controller, s, version),
+              child: Text(
+                controller.releasesBusy ? s.versionsLoading : s.versionInstall,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _systemTab(AppController controller, S s, double pad) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -1439,6 +1542,67 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                 ],
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _SectionLabel(s.versionsSection),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: _card(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (controller.releaseApplied) ...[
+                Text(
+                  s.updateAppliedText,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    FilledButton(
+                      onPressed: () => exit(0),
+                      child: Text(s.restartNow),
+                    ),
+                  ],
+                ),
+              ] else if (!controller.releasesLoaded) ...[
+                OutlinedButton.icon(
+                  onPressed:
+                      controller.releasesLoading || controller.releasesBusy
+                          ? null
+                          : () => controller.loadReleases(),
+                  icon: const Icon(Icons.history, size: 20),
+                  label: Text(
+                    controller.releasesLoading
+                        ? s.versionsLoading
+                        : s.showVersions,
+                  ),
+                ),
+              ] else if (controller.releases.isEmpty) ...[
+                Text(s.versionsEmpty, style: theme.textTheme.bodySmall),
+              ] else ...[
+                ...controller.releases.map(
+                  (release) =>
+                      _releaseRow(controller, s, release, theme, scheme),
+                ),
+              ],
+              if (controller.releasesError.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  s.releasesFailed(controller.releasesError),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

@@ -367,6 +367,21 @@ class S {
       ? 'обновлять сборки избранных серверов в фоне'
       : 'keep favorite server builds up to date in background';
 
+  String get versionsSection => ru ? 'Версии лаунчера' : 'Launcher versions';
+  String get showVersions => ru ? 'Список версий' : 'List versions';
+  String get versionsLoading => ru ? 'Загружаем…' : 'Loading…';
+  String get versionsEmpty => ru ? 'Список пуст' : 'Nothing to show';
+  String get versionCurrent => ru ? 'Текущая' : 'Current';
+  String get versionInstall => ru ? 'Установить' : 'Install';
+  String get versionPrerelease => ru ? 'пре-релиз' : 'pre-release';
+  String installConfirmTitle(String version) =>
+      ru ? 'Установить $version?' : 'Install $version?';
+  String installConfirmBody(String version) => ru
+      ? 'Лаунчер скачает $version и заменит свои файлы при следующем закрытии. Сборки серверов не затрагиваются.'
+      : 'The launcher downloads $version and replaces its files on next close. Server builds are not touched.';
+  String releasesFailed(String error) =>
+      ru ? 'Не удалось получить список: $error' : 'Failed to load releases: $error';
+
   String get safetySection => ru ? 'Безопасность' : 'Safety';
   String get patchRpcLabel =>
       ru ? 'Отключить Discord RPC' : 'Disable Discord RPC';

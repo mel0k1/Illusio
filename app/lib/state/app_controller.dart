@@ -109,6 +109,12 @@ class AppController extends ChangeNotifier {
   bool updateBusy = false;
   bool updateApplied = false;
   String updateError = '';
+  List<Map<String, dynamic>> releases = [];
+  bool releasesLoading = false;
+  bool releasesBusy = false;
+  bool releasesLoaded = false;
+  bool releaseApplied = false;
+  String releasesError = '';
   Timer? _refreshTimer;
   Timer? _prefetchTimer;
   Timer? _ipcTimer;
@@ -1309,6 +1315,56 @@ class AppController extends ChangeNotifier {
       updateApplied = true;
     } else if (result['ok'] != true) {
       updateError = result['error']?.toString() ?? '';
+    }
+    notifyListeners();
+  }
+
+  Future<void> loadReleases() async {
+    if (releasesLoading || releasesBusy) {
+      return;
+    }
+    releasesLoading = true;
+    releasesError = '';
+    notifyListeners();
+    final payload = jsonEncode({'current': appVersion, 'prerelease': updatePrerelease});
+    final result = await Isolate.run(() => Core.releasesList(payload));
+    releasesLoading = false;
+    if (result['ok'] == true) {
+      final list = result['releases'];
+      releases = list is List
+          ? list
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList()
+          : [];
+      releasesLoaded = true;
+      releaseApplied = false;
+    } else {
+      releasesError = result['error']?.toString() ?? '';
+    }
+    notifyListeners();
+  }
+
+  Future<void> installRelease(int index) async {
+    if (releasesBusy || updateBusy || index < 0 || index >= releases.length) {
+      return;
+    }
+    final release = releases[index];
+    final url = release['assetUrl']?.toString() ?? '';
+    final name = release['assetName']?.toString() ?? '';
+    if (url.isEmpty || name.isEmpty) {
+      return;
+    }
+    releasesBusy = true;
+    releasesError = '';
+    notifyListeners();
+    final payload = jsonEncode({'url': url, 'name': name});
+    final result = await Isolate.run(() => Core.releaseInstall(payload));
+    releasesBusy = false;
+    if (result['ok'] == true) {
+      releaseApplied = true;
+    } else {
+      releasesError = result['error']?.toString() ?? '';
     }
     notifyListeners();
   }
