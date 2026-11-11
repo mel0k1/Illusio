@@ -333,6 +333,11 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
     );
+    final savedName = name.text.trim();
+    final savedHost = host.text.trim();
+    final savedPort = int.tryParse(port.text.trim())?.clamp(1, 65535) ?? 1080;
+    final savedUser = user.text.trim();
+    final savedPass = pass.text;
     name.dispose();
     host.dispose();
     port.dispose();
@@ -346,13 +351,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     widget.controller.upsertProxyProfile(
       ProxyProfileInfo(
         id: id,
-        name: name.text.trim().isEmpty
-            ? host.text.trim()
-            : name.text.trim(),
-        host: host.text.trim(),
-        port: int.tryParse(port.text.trim())?.clamp(1, 65535) ?? 1080,
-        username: user.text.trim(),
-        password: pass.text,
+        name: savedName.isEmpty ? savedHost : savedName,
+        host: savedHost,
+        port: savedPort,
+        username: savedUser,
+        password: savedPass,
       ),
     );
     if (mounted) {
@@ -1515,13 +1518,20 @@ class _SettingsScreenState extends State<SettingsScreen>
               onPressed: controller.releasesBusy
                   ? null
                   : () => _confirmInstall(controller, s, version),
-              child: Text(
-                controller.installingRelease == index
-                    ? '${(controller.releaseProgressValue * 100).round()}%'
-                    : controller.releasesBusy
-                        ? s.versionsLoading
-                        : s.versionInstall,
-              ),
+              child: controller.installingRelease == index &&
+                      controller.releaseProgressValue <= 0
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      controller.installingRelease == index
+                          ? '${(controller.releaseProgressValue * 100).round()}%'
+                          : controller.releasesBusy
+                              ? s.versionsLoading
+                              : s.versionInstall,
+                    ),
             ),
         ],
       ),
@@ -1618,12 +1628,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                     )
                   else
                     OutlinedButton.icon(
-                      onPressed: controller.updateBusy
+                      onPressed: controller.updateBusy ||
+                              controller.updateCheckBusy
                           ? null
                           : () => controller.checkForUpdates(),
-                      icon: const Icon(Icons.update, size: 20),
+                      icon: controller.updateCheckBusy
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.update, size: 20),
                       label: Text(
-                        controller.updateBusy
+                        controller.updateCheckBusy
                             ? s.checkingUpdates
                             : s.checkUpdates,
                       ),

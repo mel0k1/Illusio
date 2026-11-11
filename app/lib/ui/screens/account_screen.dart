@@ -17,6 +17,7 @@ class AccountSheet extends StatefulWidget {
 
 class _AccountSheetState extends State<AccountSheet> {
   bool _loginMode = false;
+  bool _busy = false;
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _tfa = TextEditingController();
@@ -76,19 +77,33 @@ class _AccountSheetState extends State<AccountSheet> {
   }
 
   Future<void> _loginGuest() async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final s = S.of(context);
     await widget.controller.loginAsGuest();
+    if (!mounted) {
+      return;
+    }
     navigator.pop();
     messenger.showSnackBar(illusioSnackBar(s.guestSignedIn));
   }
 
   Future<void> _switch(LoginInfo account) async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final s = S.of(context);
     await widget.controller.switchAccount(account);
+    if (!mounted) {
+      return;
+    }
     navigator.pop();
     messenger.showSnackBar(
       illusioSnackBar(s.accountSwitched(account.username)),
@@ -167,7 +182,7 @@ class _AccountSheetState extends State<AccountSheet> {
               for (final account in others)
                 _AccountTile(
                   account: account,
-                  onTap: () => _switch(account),
+                  onTap: _busy ? null : () => _switch(account),
                 ),
               const SizedBox(height: 20),
             ],
@@ -178,7 +193,7 @@ class _AccountSheetState extends State<AccountSheet> {
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: _loginGuest,
+              onPressed: _busy ? null : _loginGuest,
               icon: const Icon(Icons.person_off_outlined, size: 20),
               label: Text(S.of(context).loginAsGuest),
             ),
@@ -344,7 +359,7 @@ class _AccountTile extends StatelessWidget {
   const _AccountTile({required this.account, required this.onTap});
 
   final LoginInfo account;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

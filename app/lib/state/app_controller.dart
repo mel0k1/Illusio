@@ -101,12 +101,16 @@ class AppController extends ChangeNotifier {
   bool cardMap = true;
   bool cardPreset = true;
   bool cardRound = true;
+  int blobKeepDays = 7;
+  int bundleKeep = 10;
+  int engineKeep = 2;
 
   CrashInfo? crashDiag;
 
   String updateVersion = '';
   String updateNotes = '';
   bool updateBusy = false;
+  bool updateCheckBusy = false;
   bool updateApplied = false;
   String updateError = '';
   List<Map<String, dynamic>> releases = [];
@@ -126,6 +130,7 @@ class AppController extends ChangeNotifier {
   Timer? _ipcTimer;
   Timer? _crashTimer;
   bool _prefetchRunning = false;
+  Future<void> _saveChain = Future.value();
 
   bool get ru => language != 'en';
 
@@ -309,6 +314,9 @@ class AppController extends ChangeNotifier {
       cardMap = config['card_map'] != false;
       cardPreset = config['card_preset'] != false;
       cardRound = config['card_round'] != false;
+      blobKeepDays = (config['blob_keep_days'] as num?)?.toInt() ?? 7;
+      bundleKeep = (config['bundle_keep'] as num?)?.toInt() ?? 10;
+      engineKeep = (config['engine_keep'] as num?)?.toInt() ?? 2;
       dllModsEnabled
         ..clear()
         ..addAll(
@@ -701,8 +709,15 @@ class AppController extends ChangeNotifier {
       'card_map': cardMap,
       'card_preset': cardPreset,
       'card_round': cardRound,
+      'blob_keep_days': blobKeepDays,
+      'bundle_keep': bundleKeep,
+      'engine_keep': engineKeep,
     });
-    await Isolate.run(() => Core.saveConfig(payload));
+    final task = _saveChain.then(
+      (_) => Isolate.run(() => Core.saveConfig(payload)),
+    );
+    _saveChain = task.catchError((Object _) {});
+    await task;
   }
 
   bool privacyAccepted(ServerPrivacyInfo? policy) {
@@ -801,12 +816,18 @@ class AppController extends ChangeNotifier {
     if (started['ok'] != true) {
       return;
     }
+    var bad = 0;
     while (true) {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       final result = await Isolate.run(Core.downloadState);
       if (result['ok'] != true) {
+        bad++;
+        if (bad >= 40) {
+          return;
+        }
         continue;
       }
+      bad = 0;
       downloadState = DownloadStateInfo.fromMap(result['state']);
       notifyListeners();
       if (downloadState.isDone || downloadState.isError) {
@@ -1280,31 +1301,38 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> checkForUpdates({bool auto = false}) async {
-    if (updateBusy) {
+    if (updateBusy || updateCheckBusy) {
       return;
     }
-    final payload = jsonEncode({'current': appVersion, 'prerelease': updatePrerelease});
-    final result = await Isolate.run(() => Core.updateCheck(payload));
-    if (result['ok'] != true) {
-      if (!auto) {
-        updateError = result['error']?.toString() ?? '';
-        notifyListeners();
-      }
-      return;
+    updateCheckBusy = true;
+    if (!auto) {
+      notifyListeners();
     }
-    updateError = '';
-    if (result['available'] == true) {
-      updateVersion = result['version']?.toString() ?? '';
-      updateNotes = result['notes']?.toString() ?? '';
-      if (auto) {
-        await applyUpdate();
+    try {
+      final payload = jsonEncode({'current': appVersion, 'prerelease': updatePrerelease});
+      final result = await Isolate.run(() => Core.updateCheck(payload));
+      if (result['ok'] != true) {
+        if (!auto) {
+          updateError = result['error']?.toString() ?? '';
+        }
         return;
       }
-    } else {
-      updateVersion = '';
-      updateNotes = '';
+      updateError = '';
+      if (result['available'] == true) {
+        updateVersion = result['version']?.toString() ?? '';
+        updateNotes = result['notes']?.toString() ?? '';
+        if (auto) {
+          await applyUpdate();
+          return;
+        }
+      } else {
+        updateVersion = '';
+        updateNotes = '';
+      }
+    } finally {
+      updateCheckBusy = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> applyUpdate() async {
@@ -1413,32 +1441,46 @@ class AppController extends ChangeNotifier {
       'server_url': selectedServer?.url ?? '',
       'install_dir': installDir,
     });
-    final started = await Isolate.run(() => Core.startVerify(payload));
-    if (started['ok'] != true) {
+    try {
+      final started = await Isolate.run(() => Core.startVerify(payload));
+      if (started['ok'] != true) {
+        verifyError = started['error']?.toString() ?? '';
+        return;
+      }
+      var bad = 0;
+      var polls = 0;
+      while (true) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        polls++;
+        if (polls > 6750) {
+          verifyError = s.verifyStuck;
+          break;
+        }
+        final result = await Isolate.run(Core.downloadState);
+        if (result['ok'] != true) {
+          bad++;
+          if (bad >= 25) {
+            verifyError = s.verifyStuck;
+            break;
+          }
+          continue;
+        }
+        bad = 0;
+        downloadState = DownloadStateInfo.fromMap(result['state']);
+        notifyListeners();
+        if (downloadState.isDone || downloadState.isError) {
+          break;
+        }
+      }
+      if (downloadState.isDone) {
+        verifyResult = downloadState.message;
+      } else if (downloadState.isError && verifyError.isEmpty) {
+        verifyError = downloadState.error;
+      }
+    } finally {
       verifying = false;
-      verifyError = started['error']?.toString() ?? '';
       notifyListeners();
-      return;
     }
-    while (true) {
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      final result = await Isolate.run(Core.downloadState);
-      if (result['ok'] != true) {
-        continue;
-      }
-      downloadState = DownloadStateInfo.fromMap(result['state']);
-      notifyListeners();
-      if (downloadState.isDone || downloadState.isError) {
-        break;
-      }
-    }
-    verifying = false;
-    if (downloadState.isDone) {
-      verifyResult = downloadState.message;
-    } else if (downloadState.isError) {
-      verifyError = downloadState.error;
-    }
-    notifyListeners();
   }
 
   Future<Map<String, dynamic>> proxyProbe(bool udp) async {
@@ -1814,7 +1856,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> connect(GameServer server) async {
-    if (connecting) {
+    if (connecting || verifying || downloadState.running) {
       return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
@@ -1853,7 +1895,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> connectBundle(String zipPath) async {
-    if (connecting) {
+    if (connecting || verifying || downloadState.running) {
       return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
@@ -1875,12 +1917,20 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> _pollDownload(GameServer? server) async {
+    var bad = 0;
     while (true) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
       final result = await Isolate.run(Core.downloadState);
       if (result['ok'] != true) {
+        bad++;
+        if (bad >= 40) {
+          connecting = false;
+          notifyListeners();
+          return {'ok': false, 'error': s.downloadLost};
+        }
         continue;
       }
+      bad = 0;
       downloadState = DownloadStateInfo.fromMap(result['state']);
       notifyListeners();
       if (downloadState.isDone) {
@@ -1963,14 +2013,14 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
-  Future<void> launchGuardContinue() async {
+  Future<Map<String, dynamic>> launchGuardContinue() async {
     final server = _launchGuardServer;
     launchGuardActive = false;
     launchGuardError = '';
     _launchGuardServer = null;
     notifyListeners();
     await continueWithoutProxy();
-    await _launchAfterDownload(server);
+    return _launchAfterDownload(server);
   }
 
   Future<void> launchGuardCancel() async {
@@ -2001,21 +2051,25 @@ class AppController extends ChangeNotifier {
   void setBackports(bool value) {
     backports = value;
     notifyListeners();
+    saveConfig();
   }
 
   void setBackportsNoAny(bool value) {
     backportsNoAny = value;
     notifyListeners();
+    saveConfig();
   }
 
   void setRpcFake(bool value) {
     rpcFake = value;
     notifyListeners();
+    saveConfig();
   }
 
   void setRpcFakeName(String value) {
     rpcFakeName = value;
     notifyListeners();
+    saveConfig();
   }
 
   void setProxyGuardLaunch(bool value) {

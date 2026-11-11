@@ -51,6 +51,9 @@ class Core {
   static final Pointer<Utf8> Function() _downloadState = _lib
       .lookup<NativeFunction<VersionNative>>('illusio_download_state')
       .asFunction();
+  static final Pointer<Utf8> Function() _downloadCancel = _lib
+      .lookup<NativeFunction<VersionNative>>('illusio_download_cancel')
+      .asFunction();
   static final Pointer<Utf8> Function(Pointer<Utf8>) _authenticate = _lib
       .lookup<NativeFunction<TakeStringNative>>('illusio_authenticate')
       .asFunction();
@@ -183,6 +186,8 @@ class Core {
 
   static Map<String, dynamic> downloadState() => _run(_downloadState);
 
+  static Map<String, dynamic> downloadCancel() => _run(_downloadCancel);
+
   static Map<String, dynamic> authenticate(String json) =>
       _withString(json, _authenticate);
 
@@ -292,16 +297,19 @@ class Core {
   }
 
   static Map<String, dynamic> _run(Pointer<Utf8> Function() call) {
+    Pointer<Utf8>? pointer;
     try {
-      final pointer = call();
+      pointer = call();
       if (pointer == nullptr) {
         return {'ok': false, 'error': 'core empty reply'};
       }
-      final raw = pointer.toDartString();
-      _free(pointer);
-      return _decode(raw);
+      return _decode(pointer.toDartString());
     } catch (error) {
       return {'ok': false, 'error': error.toString()};
+    } finally {
+      if (pointer != null && pointer != nullptr) {
+        _free(pointer);
+      }
     }
   }
 

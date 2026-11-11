@@ -149,17 +149,16 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     final result = widget.isBundle
         ? await widget.controller.connectBundle(widget.bundlePath)
         : await widget.controller.connect(widget.server);
-    if (!_visible || !mounted) {
-      return;
+    if (_visible && mounted) {
+      navigator.pop();
     }
-    navigator.pop();
-    if (result['ok'] == true) {
-      messenger.showSnackBar(illusioSnackBar(s.clientStarted));
-    } else {
-      messenger.showSnackBar(
-        illusioSnackBar(result['error']?.toString() ?? s.connectFailed),
-      );
-    }
+    messenger.showSnackBar(
+      illusioSnackBar(
+        result['ok'] == true
+            ? s.clientStarted
+            : (result['error']?.toString() ?? s.connectFailed),
+      ),
+    );
   }
 
   void _hide() {
@@ -258,7 +257,7 @@ class _DownloadBody extends StatelessWidget {
             duration: spatialDefault,
             curve: expressCurve,
             builder: (context, value, _) => LinearProgressIndicator(
-              value: value,
+              value: state.total > 0 ? value : null,
               minHeight: 8,
               borderRadius: BorderRadius.circular(4),
               backgroundColor: scheme.surfaceContainerHighest,
@@ -317,7 +316,7 @@ class DownloadInline extends StatelessWidget {
               duration: spatialDefault,
               curve: expressCurve,
               builder: (context, value, _) => LinearProgressIndicator(
-                value: value,
+                value: state.total > 0 ? value : null,
                 minHeight: 6,
                 borderRadius: BorderRadius.circular(3),
                 backgroundColor: scheme.surfaceContainerHighest,

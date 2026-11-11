@@ -1,7 +1,7 @@
 name: illusio
 description: Лаунчер Space Station 14 на Rust и Flutter.
 publish_to: none
-version: 0.11.0
+version: 0.11.1
 
 environment:
   sdk: ">=3.6.0 <4.0.0"

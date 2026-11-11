@@ -89,6 +89,11 @@ class S {
   String get loadingList =>
       ru ? 'Получаем список серверов' : 'Fetching server list';
   String get hubUnavailable => ru ? 'Хаб недоступен' : 'Hub unavailable';
+  String get verifyStuck =>
+      ru ? 'Проверка перестала отвечать' : 'Verify stopped responding';
+  String get downloadLost =>
+      ru ? 'Загрузчик перестал отвечать' : 'Downloader stopped responding';
+  String get probeTimeout => ru ? 'нет ответа (таймаут)' : 'no response (timeout)';
   String get listNotUpdated => ru ? 'список не обновлён' : 'list not refreshed';
   String get connect => ru ? 'Подключиться' : 'Connect';
   String get serverNotResponding =>
@@ -97,14 +102,14 @@ class S {
   String pingLabel(String label) => ru ? 'пинг $label' : 'ping $label';
   String serversCount(int visible, int total, int online) => ru
       ? '$visible из $total ${_serversWord(total)} · $online ${_playersWord(online)} онлайн'
-      : '$visible of $total servers · $online players online';
+      : '$visible of $total ${total == 1 ? 'server' : 'servers'} · $online ${online == 1 ? 'player' : 'players'} online';
   String playersOf(int count, int max) => ru
       ? max <= 0
             ? '$count ${_playersWord(count)}'
             : '$count / $max ${_playersWord(max)}'
       : max <= 0
-      ? '$count players'
-      : '$count / $max players';
+      ? '$count ${count == 1 ? 'player' : 'players'}'
+      : '$count / $max ${max == 1 ? 'player' : 'players'}';
   String get round => ru ? 'Раунд' : 'Round';
   String get inRound => ru ? 'В раунде' : 'In round';
   String get afterRound => ru ? 'После раунда' : 'After round';
@@ -144,8 +149,23 @@ class S {
     'oceania': 'Океания',
   };
 
-  String regionName(String value) =>
-      ru ? regionNames[value.toLowerCase()] ?? value : value;
+  static const regionNamesEn = {
+    'eu_west': 'Europe (west)',
+    'eu_east': 'Europe (east)',
+    'na_west': 'North America (west)',
+    'na_east': 'North America (east)',
+    'na_central': 'North America (central)',
+    'sa_central': 'Central America',
+    'asia_north': 'Asia (north)',
+    'asia_east': 'Asia (east)',
+    'asia_se': 'Asia (southeast)',
+    'oceania': 'Oceania',
+  };
+
+  String regionName(String value) {
+    final key = value.toLowerCase();
+    return ru ? regionNames[key] ?? value : regionNamesEn[key] ?? value;
+  }
 
   String hubPrefix(String hub) => ru ? 'хаб $hub' : 'hub $hub';
 

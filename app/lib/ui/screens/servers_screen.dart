@@ -537,9 +537,9 @@ class _Monogram extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final source = server.name.isEmpty ? server.address : server.name;
-    final letter = source.isEmpty
-        ? '?'
-        : source.replaceAll(RegExp(r'^\W+'), '')[0].toUpperCase();
+    final stripped =
+        source.replaceAll(RegExp(r'^[^\p{L}\p{N}]+', unicode: true), '');
+    final letter = stripped.isEmpty ? '?' : stripped[0].toUpperCase();
     return Container(
       width: 40,
       height: 40,

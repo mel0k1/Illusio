@@ -180,7 +180,9 @@ class _AppShellState extends State<AppShell> {
         title: Text(S.of(dialogContext).proxyGuardTitle),
         content: Text(
           S.of(dialogContext).proxyGuardBody(
-                error.isEmpty ? 'timeout' : error,
+                error.isEmpty
+                    ? S.of(dialogContext).probeTimeout
+                    : error,
               ),
         ),
         actions: [
@@ -199,10 +201,21 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     if (proceed == true) {
-      await widget.controller.launchGuardContinue();
-      messenger.showSnackBar(
-        illusioSnackBar(s.proxySessionOffNotice),
-      );
+      final result = await widget.controller.launchGuardContinue();
+      if (!mounted) {
+        return;
+      }
+      if (result['ok'] == true) {
+        messenger.showSnackBar(
+          illusioSnackBar(s.proxySessionOffNotice),
+        );
+      } else {
+        messenger.showSnackBar(
+          illusioSnackBar(
+            result['error']?.toString() ?? s.connectFailed,
+          ),
+        );
+      }
     } else {
       await widget.controller.launchGuardCancel();
     }
@@ -220,7 +233,9 @@ class _AppShellState extends State<AppShell> {
         title: Text(S.of(dialogContext).proxyUnavailableTitle),
         content: Text(
           S.of(dialogContext).proxyUnavailableBody(
-                error.isEmpty ? 'timeout' : error,
+                error.isEmpty
+                    ? S.of(dialogContext).probeTimeout
+                    : error,
               ),
         ),
         actions: [
