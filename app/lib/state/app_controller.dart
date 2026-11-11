@@ -713,7 +713,7 @@ class AppController extends ChangeNotifier {
       'bundle_keep': bundleKeep,
       'engine_keep': engineKeep,
     });
-    final task = _saveChain.then(
+    final task = _saveChain.then<void>(
       (_) => Isolate.run(() => Core.saveConfig(payload)),
     );
     _saveChain = task.catchError((Object _) {});
