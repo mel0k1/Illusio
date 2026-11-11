@@ -53,6 +53,13 @@ jobs:
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
+          for i in $(seq 1 60); do
+            if ! sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/lib/dpkg/lock >/dev/null 2>&1; then
+              break
+            fi
+            echo "waiting for apt locks ($i/60)"
+            sleep 10
+          done
           sudo apt-get update \
             -o Acquire::Retries=5 \
             -o Acquire::http::Timeout=30 \
