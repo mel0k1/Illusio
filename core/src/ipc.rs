@@ -89,6 +89,9 @@ fn send(body: &[u8]) -> bool {
 }
 
 #[cfg(unix)]
+const MAX_PAYLOAD: u64 = 64 * 1024;
+
+#[cfg(unix)]
 fn socket_server() {
     use std::os::unix::net::UnixListener;
     let Some(path) = socket_path() else {
@@ -98,12 +101,19 @@ fn socket_server() {
     let Ok(listener) = UnixListener::bind(&path) else {
         return;
     };
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
     for stream in listener.incoming() {
-        let Ok(mut stream) = stream else {
+        let Ok(stream) = stream else {
             continue;
         };
         let mut buffer = Vec::new();
-        if stream.read_to_end(&mut buffer).is_ok() {
+        let mut limited = stream.take(MAX_PAYLOAD);
+        // Переполнение лимита — ошибка: такой payload не разбираем.
+        let ok = limited.read_to_end(&mut buffer).is_ok() && (buffer.len() as u64) < MAX_PAYLOAD;
+        if ok {
             for link in parse_payload(&buffer) {
                 if let Ok(mut guard) = queue().lock() {
                     guard.push_back(link);
@@ -115,11 +125,19 @@ fn socket_server() {
 
 #[cfg(windows)]
 fn send(body: &[u8]) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_PIPE_BUSY, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    };
     use windows_sys::Win32::Storage::FileSystem::{CreateFileW, WriteFile, OPEN_EXISTING};
+    use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
+
+    const PIPE_BUSY_RETRY: Duration = Duration::from_secs(1);
+    const PIPE_BUSY_WAIT_MS: u32 = 100;
 
     let name: Vec<u16> = WINDOW_NAME.encode_utf16().chain([0]).collect();
-    let handle = unsafe {
+    let deadline = Instant::now() + PIPE_BUSY_RETRY;
+    let mut handle = unsafe {
         CreateFileW(
             name.as_ptr(),
             GENERIC_WRITE,
@@ -130,8 +148,27 @@ fn send(body: &[u8]) -> bool {
             std::ptr::null_mut(),
         )
     };
-    if handle == INVALID_HANDLE_VALUE || handle.is_null() {
-        return false;
+    // У канала один инстанс: при ERROR_PIPE_BUSY ждём и пробуем снова.
+    while handle == INVALID_HANDLE_VALUE || handle.is_null() {
+        let error = unsafe { GetLastError() };
+        if error != ERROR_PIPE_BUSY || Instant::now() >= deadline {
+            return false;
+        }
+        let available = unsafe { WaitNamedPipeW(name.as_ptr(), PIPE_BUSY_WAIT_MS) };
+        if available == 0 && Instant::now() >= deadline {
+            return false;
+        }
+        handle = unsafe {
+            CreateFileW(
+                name.as_ptr(),
+                GENERIC_WRITE,
+                0,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                std::ptr::null_mut(),
+            )
+        };
     }
     let mut written: u32 = 0;
     let ok = unsafe {

@@ -112,11 +112,27 @@ pub fn platform_asset_suffix() -> &'static str {
 }
 
 fn update_client() -> Result<reqwest::blocking::Client, String> {
+    // Короткий общий таймаут — только для небольших JSON-запросов к API релизов.
     crate::http::with_route(
         reqwest::blocking::Client::builder(),
         crate::http::Route::Updates,
     )
+    .connect_timeout(Duration::from_secs(20))
     .timeout(Duration::from_secs(20))
+    .user_agent(format!("Illusio/{}", env!("CARGO_PKG_VERSION")))
+    .build()
+    .map_err(|error| error.to_string())
+}
+
+fn download_client() -> Result<reqwest::blocking::Client, String> {
+    // Архив релиза качается долго: жёсткий таймаут только на соединение,
+    // общий — щедрый (час), иначе большие обновления всегда падали.
+    crate::http::with_route(
+        reqwest::blocking::Client::builder(),
+        crate::http::Route::Updates,
+    )
+    .connect_timeout(Duration::from_secs(20))
+    .timeout(Duration::from_secs(3600))
     .user_agent(format!("Illusio/{}", env!("CARGO_PKG_VERSION")))
     .build()
     .map_err(|error| error.to_string())
@@ -249,6 +265,51 @@ pub fn release_progress() -> ReleaseState {
         .unwrap_or_default()
 }
 
+static RELEASE_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Сбрасывает флаг reentrancy-защиты install_release при любом выходе.
+struct ReleaseGuard;
+
+impl Drop for ReleaseGuard {
+    fn drop(&mut self) {
+        RELEASE_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Разрешены только релизы этого проекта: страница релизов на GitHub и CDN раздачи.
+fn is_allowed_asset_url(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    let Some((scheme, rest)) = trimmed.split_once("://") else {
+        return false;
+    };
+    if !scheme.eq_ignore_ascii_case("https") {
+        return false;
+    }
+    let (authority, path) = match rest.find('/') {
+        Some(index) => (&rest[..index], &rest[index..]),
+        None => (rest, ""),
+    };
+    let host = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority);
+    let host = host
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .trim_matches(['[', ']'])
+        .to_ascii_lowercase();
+    if host == "objects.githubusercontent.com" {
+        return true;
+    }
+    if host == "github.com" {
+        return path
+            .to_ascii_lowercase()
+            .starts_with("/mel0k1/illusio/releases");
+    }
+    false
+}
+
 pub fn install_release(asset_url: &str, asset_name: &str) -> Result<(), String> {
     if asset_url.trim().is_empty() || asset_name.trim().is_empty() {
         set_release_state(|state| {
@@ -258,6 +319,18 @@ pub fn install_release(asset_url: &str, asset_name: &str) -> Result<(), String> 
         });
         return Err("не указан файл релиза".into());
     }
+    if !is_allowed_asset_url(asset_url) {
+        set_release_state(|state| {
+            state.phase = "error".into();
+            state.error = "недопустимый адрес файла релиза".into();
+            state.running = false;
+        });
+        return Err("недопустимый адрес файла релиза".into());
+    }
+    if RELEASE_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err("обновление уже выполняется".into());
+    }
+    let _guard = ReleaseGuard;
     set_release_state(|state| {
         state.phase = "download".into();
         state.downloaded = 0;
@@ -314,7 +387,7 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
         .ok_or_else(|| "некорректное имя файла".to_string())?;
     fs::create_dir_all(dest_dir).map_err(|error| error.to_string())?;
     let dest = dest_dir.join(clean);
-    let client = update_client()?;
+    let client = download_client()?;
     let mut response = client
         .get(url)
         .send()
@@ -347,6 +420,12 @@ pub fn download_asset(url: &str, dest_dir: &Path, name: &str) -> Result<PathBuf,
         set_release_state(|state| state.downloaded = downloaded);
     }
     file.flush().map_err(|error| error.to_string())?;
+    if total > 0 && downloaded != total {
+        fs::remove_file(&dest).ok();
+        return Err(format!(
+            "загрузка оборвалась: получено {downloaded} из {total} байт"
+        ));
+    }
     Ok(dest)
 }
 
@@ -429,10 +508,28 @@ fn apply_linux(archive: &Path, install: &Path, exe: &Path) -> Result<(), String>
     let pid = std::process::id();
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
+    // Распаковываем в staging рядом с установкой, только потом заменяем каталог:
+    // старая версия остаётся на месте, если tar упал.
+    let install_name = install
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("illusio")
+        .to_string();
+    let stage = install
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(format!("{install_name}.update.new"));
+    let old = install
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(format!("{install_name}.update.old"));
     let body = format!(
-        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\ntar -xzf {archive} -C {install}\nchmod +x {exe}\nnohup {exe} >/dev/null 2>&1 &\nrm -f \"$0\"\n",
+        "#!/bin/sh\nset -e\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\nrm -rf {stage} {old}\nmkdir -p {stage}\ntar -xzf {archive} -C {stage}\nif [ -d {install} ]; then\n  mv {install} {old}\nfi\nif ! mv {stage} {install}; then\n  if [ -d {old} ]; then mv {old} {install}; fi\n  exit 1\nfi\nrm -rf {old}\nchmod +x {exe}\nnohup {exe} >/dev/null 2>&1 &\nrm -f \"$0\"\n",
+        pid = pid,
         archive = sh_quote(&archive.display().to_string()),
         install = sh_quote(&install.display().to_string()),
+        stage = sh_quote(&stage.display().to_string()),
+        old = sh_quote(&old.display().to_string()),
         exe = sh_quote(&exe.display().to_string()),
     );
     fs::write(&script, body).map_err(|error| error.to_string())?;
@@ -463,11 +560,33 @@ fn apply_macos(
     let pid = std::process::id();
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
+    // Распаковываем во временную папку, заменяем .app только после успешного unzip,
+    // старая версия на время подмены переезжает в .old.
+    let stage = extracted.join("app");
+    let stage_app = stage.join(
+        app_path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("Illusio.app")),
+    );
+    let old = app_dir.join(format!(
+        "{}.old",
+        app_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Illusio.app")
+    ));
     let body = format!(
-        "#!/bin/sh\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\nrm -rf {app}\nunzip -q -o {zip} -d {dir}\nopen {app}\nrm -f \"$0\"\n",
-        app = sh_quote(&app_path.display().to_string()),
+        "#!/bin/sh\nset -e\nwhile kill -0 {pid} 2>/dev/null; do sleep 1; done\nrm -rf {stage} {old}\nmkdir -p {stage}\nunzip -q -o {zip} -d {stage}\nif [ ! -d {stage_app} ]; then\n  echo \"в архиве нет {app_name}\" >&2\n  exit 1\nfi\nif [ -d {app} ]; then\n  mv {app} {old}\nfi\nif ! mv {stage_app} {app}; then\n  if [ -d {old} ]; then mv {old} {app}; fi\n  exit 1\nfi\nrm -rf {old} {stage}\nopen {app}\nrm -f \"$0\"\n",
+        pid = pid,
         zip = sh_quote(&archive.display().to_string()),
-        dir = sh_quote(&app_dir.display().to_string()),
+        stage = sh_quote(&stage.display().to_string()),
+        stage_app = sh_quote(&stage_app.display().to_string()),
+        app_name = app_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Illusio.app"),
+        app = sh_quote(&app_path.display().to_string()),
+        old = sh_quote(&old.display().to_string()),
     );
     fs::write(&script, body).map_err(|error| error.to_string())?;
     #[cfg(unix)]
@@ -650,6 +769,29 @@ mod tests {
             ".."
         )
         .is_err());
+    }
+
+    #[test]
+    fn allowlists_release_urls() {
+        assert!(super::is_allowed_asset_url(
+            "https://github.com/mel0k1/Illusio/releases/download/v0.11.0/Illusio-0.11.0-linux-x64.tar.gz"
+        ));
+        assert!(super::is_allowed_asset_url(
+            "https://objects.githubusercontent.com/some/path"
+        ));
+        assert!(!super::is_allowed_asset_url(
+            "https://github.com/other/repo/releases/download/v1/a.zip"
+        ));
+        assert!(!super::is_allowed_asset_url(
+            "http://github.com/mel0k1/Illusio/releases"
+        ));
+        assert!(!super::is_allowed_asset_url(
+            "https://evil.example.com/a.zip"
+        ));
+        assert!(!super::is_allowed_asset_url(
+            "github.com/mel0k1/Illusio/releases"
+        ));
+        assert!(!super::is_allowed_asset_url(""));
     }
 
     #[test]

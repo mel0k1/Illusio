@@ -1168,7 +1168,16 @@ internal class Program
         }
 
         var robustPath = args[0];
-        var sig = Convert.FromHexString(args[1]);
+        byte[] sig;
+        try
+        {
+            sig = Convert.FromHexString(args[1]);
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            Console.Error.WriteLine("Invalid signature hex '{0}': {1}", args[1], ex.Message);
+            return 2;
+        }
         var keyPath = args[2];
 
         var pubKey = PublicKey.Import(
@@ -1181,7 +1190,14 @@ internal class Program
         if (!SignatureAlgorithm.Ed25519.Verify(pubKey, robustBytes, sig))
         {
             var disableVar = Environment.GetEnvironmentVariable("SS14_DISABLE_SIGNING");
-            if (!string.IsNullOrEmpty(disableVar) && bool.Parse(disableVar))
+            var disableSigning = false;
+            if (!string.IsNullOrEmpty(disableVar) && !bool.TryParse(disableVar, out disableSigning))
+            {
+                Console.Error.WriteLine(
+                    "Invalid value '{0}' for SS14_DISABLE_SIGNING, expected 'true' or 'false'; treating as false.",
+                    disableVar);
+            }
+            if (disableSigning)
             {
                 Console.WriteLine("Failed to verify engine signature, ignoring because signing is disabled.");
             }

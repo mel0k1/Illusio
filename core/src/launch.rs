@@ -218,6 +218,13 @@ fn watch_child(mut child: std::process::Child, log_dir: String, relay: Option<Pr
                     std::thread::sleep(pace);
                 }
                 Err(_) => {
+                    let tail = log_tail(&log_dir, 4096);
+                    record_launch(|entry| {
+                        entry.running = false;
+                        entry.exited = true;
+                        entry.exit_code = -1;
+                        entry.log_tail = tail;
+                    });
                     if let Some(value) = handle {
                         value.stop();
                     } else if let Some(value) = relay.take() {

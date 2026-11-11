@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::auth::LoginInfo;
 
@@ -350,6 +352,8 @@ pub fn load_from(path: &PathBuf) -> Result<Config, String> {
     }
 }
 
+static SAVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -357,11 +361,43 @@ pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
     let backup = path.with_extension("json.bak");
     if path.exists() {
-        let _ = fs::copy(path, &backup);
+        // Резервная копия желательна, но не обязательна: не валим сохранение.
+        if let Err(error) = fs::copy(path, &backup) {
+            eprintln!("illusio: не удалось создать резервную копию конфигурации: {error}");
+        }
     }
-    let temp = path.with_extension("json.tmp");
-    fs::write(&temp, raw).map_err(|error| error.to_string())?;
-    fs::rename(&temp, path).map_err(|error| error.to_string())
+    // Уникальное имя temp-файла: параллельные сохранения (pid + счётчик) не топчут друг друга.
+    let sequence = SAVE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "config.json".into());
+    let temp = path.with_file_name(format!(
+        "{file_name}.tmp.{}.{}",
+        std::process::id(),
+        sequence
+    ));
+    let result = (|| -> Result<(), String> {
+        let mut file = fs::File::create(&temp).map_err(|error| error.to_string())?;
+        file.write_all(raw.as_bytes())
+            .map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        Ok(())
+    })();
+    if let Err(message) = result {
+        fs::remove_file(&temp).ok();
+        return Err(message);
+    }
+    if let Err(error) = fs::rename(&temp, path) {
+        fs::remove_file(&temp).ok();
+        return Err(error.to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 pub fn load() -> Result<Config, String> {

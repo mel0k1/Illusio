@@ -37,24 +37,82 @@ pub fn ensure_dir(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-pub fn open_with_system(target: &str) -> Result<(), String> {
-    let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "start", "", target]);
-        command
-    } else if cfg!(target_os = "macos") {
-        let mut command = Command::new("open");
-        command.arg(target);
-        command
-    } else {
-        let mut command = Command::new("xdg-open");
-        command.arg(target);
-        command
+/// Строгая проверка: открываем только http/https ссылки.
+fn is_http_url(target: &str) -> bool {
+    let trimmed = target.trim();
+    let Some((scheme, rest)) = trimmed.split_once("://") else {
+        return false;
     };
-    command
+    if rest.is_empty() {
+        return false;
+    }
+    scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+}
+
+pub fn open_with_system(target: &str) -> Result<(), String> {
+    if !is_http_url(target) {
+        return Err("поддерживаются только ссылки http и https".into());
+    }
+    open_any(target)
+}
+
+/// Открытие локального пути (каталог/файл) без ограничений на схему.
+pub fn open_path(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("путь не указан".into());
+    }
+    open_any(path)
+}
+
+fn open_any(target: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        shell_open(target)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        spawn_open("open", target)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        spawn_open("xdg-open", target)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn spawn_open(program: &str, target: &str) -> Result<(), String> {
+    Command::new(program)
+        .arg(target)
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("не удалось открыть: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn shell_open(target: &str) -> Result<(), String> {
+    // ShellExecuteW вместо `cmd /C start` — нет shell, нет инъекций через кавычки.
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    const SW_SHOWNORMAL: i32 = 1;
+    let operation: Vec<u16> = "open\0".encode_utf16().collect();
+    let file: Vec<u16> = target.encode_utf16().chain([0]).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "не удалось открыть: ShellExecuteW вернул {:?}",
+            result
+        ))
+    }
 }
 
 pub fn scan_mods(dir: &Path, metadata: &[DllMeta]) -> Result<Vec<ModEntry>, String> {
@@ -168,6 +226,27 @@ mod tests {
     fn missing_dir_is_empty() {
         let dir = std::env::temp_dir().join("illusio-no-such-mods-dir");
         assert!(scan_mods(&dir, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn validates_http_urls() {
+        assert!(super::is_http_url("https://example.com"));
+        assert!(super::is_http_url("HTTP://EXAMPLE.COM/path"));
+        assert!(super::is_http_url("  https://example.com  "));
+        assert!(!super::is_http_url("ftp://example.com"));
+        assert!(!super::is_http_url("file:///etc/passwd"));
+        assert!(!super::is_http_url("javascript:alert(1)"));
+        assert!(!super::is_http_url("example.com"));
+        assert!(!super::is_http_url("https://"));
+        assert!(!super::is_http_url(""));
+    }
+
+    #[test]
+    fn open_rejects_non_http_targets() {
+        assert!(open_with_system("file:///etc/passwd").is_err());
+        assert!(open_with_system("C:\\Windows\\System32").is_err());
+        assert!(open_with_system("calc.exe").is_err());
+        assert!(open_path("").is_err());
     }
 
     #[test]

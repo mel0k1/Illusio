@@ -408,8 +408,9 @@ pub fn prepare_udp_relay(
     let game_socket = UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
         .map_err(|error| format!("не удалось открыть UDP-сокет для игры: {error}"))?;
     let control_local = control.local_addr().map_err(|error| error.to_string())?;
+    // Локальный прокси: релей слушаем на 127.0.0.1, а не на всех интерфейсах.
     let bind_ip = if control_local.ip().is_loopback() {
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
     } else {
         control_local.ip()
     };
@@ -472,13 +473,17 @@ impl PreparedRelay {
                     Ok(value) => value,
                     Err(_) => continue,
                 };
-                if let Ok(mut guard) = upstream.client_endpoint.lock() {
-                    let changed = match *guard {
-                        Some(current) => !same_address(current, source),
-                        None => true,
+                // Адрес клиента учится один раз — по первому пакету игры;
+                // пакеты с других адресов выбрасываем.
+                {
+                    let mut guard = match upstream.client_endpoint.lock() {
+                        Ok(guard) => guard,
+                        Err(_) => return,
                     };
-                    if changed {
-                        *guard = Some(source);
+                    match *guard {
+                        Some(current) if !same_address(current, source) => continue,
+                        None => *guard = Some(source),
+                        Some(_) => {}
                     }
                 }
                 let framed = frame_udp(target_endpoint, &buffer[..size]);
@@ -507,10 +512,14 @@ impl PreparedRelay {
                 Ok(value) => value,
                 Err(_) => continue,
             };
-            if let Ok(mut guard) = downstream.relay_endpoint.lock() {
-                if !same_address(*guard, source) {
-                    *guard = source;
-                }
+            // relay_endpoint зафиксирован ответом udp_associate:
+            // всё, что приходит с другого адреса, — не наш прокси.
+            let expected = match downstream.relay_endpoint.lock() {
+                Ok(guard) => *guard,
+                Err(_) => return,
+            };
+            if !same_address(expected, source) {
+                continue;
             }
             let payload = parse_udp(&buffer[..size]).unwrap_or(&buffer[..size]);
             let client = match downstream.client_endpoint.lock() {

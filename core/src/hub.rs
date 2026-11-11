@@ -215,7 +215,7 @@ pub fn fetch_servers(hub: &str) -> Result<Vec<HubServer>, String> {
     fetch_hub_servers(hub)
 }
 
-pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
+pub fn fetch_servers_multi(hubs: &[String]) -> Result<(Vec<HubServer>, Vec<String>), String> {
     let mut jobs: Vec<(String, String)> = vec![(DEFAULT_HUB_URL.to_string(), String::new())];
     for hub in hubs {
         let url = hub_url(hub);
@@ -249,7 +249,7 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
     });
     let mut merged: Vec<HubServer> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    let mut errors: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     for result in results {
         match result {
             Ok(servers) => {
@@ -261,14 +261,14 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
                     merged.push(server);
                 }
             }
-            Err(message) => errors.push(message),
+            Err(message) => warnings.push(message),
         }
     }
     if merged.is_empty() {
-        if errors.is_empty() {
-            return Ok(merged);
+        if warnings.is_empty() {
+            return Ok((merged, warnings));
         }
-        return Err(errors.join("; "));
+        return Err(warnings.join("; "));
     }
     merged.sort_by(|left, right| {
         right
@@ -276,7 +276,7 @@ pub fn fetch_servers_multi(hubs: &[String]) -> Result<Vec<HubServer>, String> {
             .cmp(&left.players)
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
     });
-    Ok(merged)
+    Ok((merged, warnings))
 }
 
 fn ping_client() -> Result<reqwest::blocking::Client, String> {

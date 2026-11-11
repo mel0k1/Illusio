@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -184,7 +187,9 @@ pub fn read_marker(dir: &Path) -> Option<StoredBuild> {
 
 pub fn write_marker(dir: &Path, build: &StoredBuild) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(build).map_err(|error| error.to_string())?;
-    fs::write(marker_path(dir), raw).map_err(|error| error.to_string())
+    let temp = dir.join("version.tmp");
+    fs::write(&temp, raw).map_err(|error| error.to_string())?;
+    fs::rename(&temp, marker_path(dir)).map_err(|error| error.to_string())
 }
 
 fn build_matches(stored: &StoredBuild, build: &ServerBuild) -> bool {
@@ -319,17 +324,62 @@ fn job() -> &'static Job {
 }
 
 fn set_state(patch: impl FnOnce(&mut DownloadState)) {
-    if let Ok(mut state) = job().state.lock() {
-        patch(&mut state);
-    }
+    let mut state = job()
+        .state
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    patch(&mut state);
 }
 
 pub fn snapshot() -> DownloadState {
     job()
         .state
         .lock()
-        .map(|state| state.clone())
-        .unwrap_or_default()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
+}
+
+static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// Запрошенная извне отмена текущей загрузки/проверки.
+pub fn download_cancel() {
+    DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
+}
+
+fn download_cancelled() -> bool {
+    DOWNLOAD_CANCEL.load(Ordering::SeqCst)
+}
+
+/// Страховка от зависшего состояния: если поток задания паникует
+/// вне catch_unwind, Drop сбрасывает running и выставляет ошибку.
+struct JobGuard {
+    armed: bool,
+}
+
+impl Default for JobGuard {
+    fn default() -> Self {
+        Self { armed: true }
+    }
+}
+
+impl JobGuard {
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for JobGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            set_state(|state| {
+                state.running = false;
+                state.phase = "error".into();
+                if state.error.is_empty() {
+                    state.error = "задание прервано внутренней ошибкой ядра".into();
+                }
+            });
+        }
+    }
 }
 
 pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
@@ -339,7 +389,10 @@ pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
         return Err("не указан адрес сервера".into());
     }
     let install_dir = spec.install_dir.trim().to_string();
-    let mut state = job().state.lock().map_err(|_| "загрузчик недоступен")?;
+    let mut state = job()
+        .state
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     if state.running {
         return Err("загрузка уже идёт".into());
     }
@@ -357,12 +410,23 @@ pub fn start_download(spec: DownloadSpec) -> Result<(), String> {
     state.engine_sig = String::new();
     state.running = true;
     drop(state);
+    DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
     thread::spawn(move || {
-        run_job(DownloadSpec {
+        let guard = JobGuard::default();
+        let spec = DownloadSpec {
             server_url,
             install_dir,
             bundle_zip,
-        })
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| run_job(spec)));
+        if result.is_err() {
+            set_state(|state| {
+                state.running = false;
+                state.phase = "error".into();
+                state.error = "загрузка прервана внутренней ошибкой ядра".into();
+            });
+        }
+        guard.disarm();
     });
     Ok(())
 }
@@ -395,7 +459,10 @@ pub struct VerifySpec {
 pub fn start_verify(spec: VerifySpec) -> Result<(), String> {
     let server_url = spec.server_url.trim().to_string();
     let install_dir = spec.install_dir.trim().to_string();
-    let mut state = job().state.lock().map_err(|_| "загрузчик недоступен")?;
+    let mut state = job()
+        .state
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     if state.running {
         return Err("загрузка уже идёт".into());
     }
@@ -413,25 +480,39 @@ pub fn start_verify(spec: VerifySpec) -> Result<(), String> {
     state.engine_sig = String::new();
     state.running = true;
     drop(state);
+    DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
     thread::spawn(move || {
-        let result = verify_job(&VerifySpec {
+        let guard = JobGuard::default();
+        let spec = VerifySpec {
             server_url,
             install_dir,
-        });
-        match result {
-            Ok(message) => set_state(|state| {
-                state.phase = "done".into();
-                state.message = message;
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| run_verify(spec)));
+        if result.is_err() {
+            set_state(|state| {
                 state.running = false;
-            }),
-            Err(message) => set_state(|state| {
                 state.phase = "error".into();
-                state.error = message;
-                state.running = false;
-            }),
+                state.error = "проверка прервана внутренней ошибкой ядра".into();
+            });
         }
+        guard.disarm();
     });
     Ok(())
+}
+
+fn run_verify(spec: VerifySpec) {
+    match verify_job(&spec) {
+        Ok(message) => set_state(|state| {
+            state.phase = "done".into();
+            state.message = message;
+            state.running = false;
+        }),
+        Err(message) => set_state(|state| {
+            state.phase = "error".into();
+            state.error = message;
+            state.running = false;
+        }),
+    }
 }
 
 fn find_installed_marker(root: &Path) -> Result<(PathBuf, StoredBuild), String> {
@@ -549,11 +630,7 @@ fn verify_job(spec: &VerifySpec) -> Result<String, String> {
     });
     let mut broken: Vec<acz::ManifestEntry> = Vec::new();
     for (checked, entry) in unique.iter().enumerate() {
-        let path = blobs.join(format!("{}.bin", entry.hash_hex));
-        let healthy = fs::read(&path)
-            .map(|data| !data.is_empty() && acz::blake2b_hex(&data) == entry.hash_hex)
-            .unwrap_or(false);
-        if !healthy {
+        if !blob_healthy(&blobs, &entry.hash_hex) {
             broken.push(entry.clone());
         }
         if (checked + 1) % 32 == 0 || checked + 1 == total {
@@ -590,15 +667,17 @@ fn verify_job(spec: &VerifySpec) -> Result<String, String> {
         Ok(())
     })?;
 
+    let assemble_total = blob_bytes(&blobs, &entries);
     set_state(|state| {
         state.downloaded = 0;
-        state.total = total as u64;
+        state.total = assemble_total;
         state.message = "собираем клиент".into();
     });
     fs::create_dir_all(&target).map_err(|error| error.to_string())?;
     let content_zip = target.join("content.zip");
     acz::assemble_overlay_zip(&entries, &blobs, &content_zip, |finished| {
-        set_state(|state| state.downloaded = finished);
+        let total = assemble_total;
+        set_state(|state| state.downloaded = finished.min(total));
     })?;
 
     Ok(format!("исправлено {broken_total} из {total} файлов"))
@@ -879,21 +958,28 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
     }
     let dir = root.join("bundles").join(folder_name);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    // Неверный (не-hex) хэш считаем отсутствующим: его нельзя ни проверить,
+    // ни безопасно вставить в имя файла.
     let hash_part = build.hash.trim().to_ascii_lowercase();
-    let name_part = if hash_part.is_empty() {
+    let hash_hex = if is_sha256_hex(&hash_part) {
+        hash_part
+    } else {
+        String::new()
+    };
+    let name_part = if hash_hex.is_empty() {
         sanitize_component(&build.version)
     } else {
         format!(
             "{}-{}",
             sanitize_component(&build.version),
-            &hash_part[..8.min(hash_part.len())]
+            hash_prefix(&hash_hex, 8)
         )
     };
     let target = dir.join(format!("{name_part}.zip"));
     if fs::metadata(&target)
         .map(|meta| meta.len() > 0)
         .unwrap_or(false)
-        && (hash_part.is_empty() || sha256_file(&target)?.eq_ignore_ascii_case(&hash_part))
+        && (hash_hex.is_empty() || sha256_file(&target)?.eq_ignore_ascii_case(&hash_hex))
     {
         return Ok(target);
     }
@@ -901,6 +987,9 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
     let mut last_error = String::new();
     let mut downloaded = false;
     for candidate in &candidates {
+        if download_cancelled() {
+            return Err("загрузка отменена".into());
+        }
         set_state(|state| {
             state.phase = "download".into();
             state.downloaded = 0;
@@ -914,15 +1003,18 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
             }
             Err(message) => {
                 last_error = message;
+                if download_cancelled() {
+                    return Err(last_error);
+                }
             }
         }
     }
     if !downloaded {
         return Err(format!("не удалось скачать базовую сборку: {last_error}"));
     }
-    if !hash_part.is_empty() {
+    if !hash_hex.is_empty() {
         let actual = sha256_file(&temp_file)?;
-        if !actual.eq_ignore_ascii_case(&hash_part) {
+        if !actual.eq_ignore_ascii_case(&hash_hex) {
             fs::remove_file(&temp_file).ok();
             fs::remove_file(sidecar_path(&temp_file)).ok();
             return Err("хэш базовой сборки не совпал".into());
@@ -1010,12 +1102,7 @@ fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload
     let blobs = acz::blobs_dir(&cache_root()?, &fork_name);
     let missing: Vec<acz::ManifestEntry> = acz::unique_entries(&entries)
         .into_iter()
-        .filter(|entry| {
-            let path = blobs.join(format!("{}.bin", entry.hash_hex));
-            !fs::metadata(&path)
-                .map(|meta| meta.len() > 0)
-                .unwrap_or(false)
-        })
+        .filter(|entry| !blob_healthy(&blobs, &entry.hash_hex))
         .collect();
     let total_unique = acz::unique_entries(&entries).len();
     let fresh = total_unique - missing.len();
@@ -1050,16 +1137,18 @@ fn run_acz(build: &ServerBuild, root: &Path, target: &Path) -> Result<AczPayload
         });
     }
 
+    let assemble_bytes = blob_bytes(&blobs, &entries);
     set_state(|state| {
         state.phase = "extract".into();
         state.message = "собираем клиент".into();
         state.downloaded = 0;
-        state.total = 0;
+        state.total = assemble_bytes;
     });
     fs::create_dir_all(target).map_err(|error| error.to_string())?;
     let content_zip = target.join("content.zip");
     acz::assemble_overlay_zip(&entries, &blobs, &content_zip, |done| {
-        set_state(|state| state.downloaded = done);
+        let total = assemble_bytes;
+        set_state(|state| state.downloaded = done.min(total));
     })?;
 
     let blob_list: String = acz::unique_entries(&entries)
@@ -1084,6 +1173,34 @@ fn cache_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "не удалось определить каталог кэша".into())
 }
 
+/// Целостность блоба в кэше: размер > 0 и blake2b совпадает с именем файла.
+fn blob_healthy(blobs: &Path, hash_hex: &str) -> bool {
+    fs::read(blobs.join(format!("{hash_hex}.bin")))
+        .map(|data| !data.is_empty() && acz::blake2b_hex(&data) == hash_hex)
+        .unwrap_or(false)
+}
+
+/// Суммарный размер блобов в кэше — для прогресса сборки в байтах.
+fn blob_bytes(blobs: &Path, entries: &[acz::ManifestEntry]) -> u64 {
+    entries
+        .iter()
+        .map(|entry| {
+            fs::metadata(blobs.join(format!("{}.bin", entry.hash_hex)))
+                .map(|meta| meta.len())
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Первые `length` символов хэша без срезов по байтам (безопасно для юникода).
+fn hash_prefix(hash: &str, length: usize) -> String {
+    hash.chars().take(length).collect()
+}
+
 fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, String> {
     if build.download_url.trim().is_empty() {
         return Err("сервер не даёт ссылку на загрузку клиента".into());
@@ -1097,6 +1214,9 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
     let mut last_error = String::new();
     let mut downloaded_path: Option<PathBuf> = None;
     for candidate in &candidates {
+        if download_cancelled() {
+            return Err("загрузка отменена".into());
+        }
         set_state(|state| {
             state.phase = "download".into();
             state.downloaded = 0;
@@ -1110,6 +1230,9 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
             }
             Err(message) => {
                 last_error = message;
+                if download_cancelled() {
+                    return Err(last_error);
+                }
             }
         }
     }
@@ -1148,7 +1271,12 @@ fn run_zip(build: &ServerBuild, root: &Path, target: &Path) -> Result<String, St
         if staging.exists() {
             fs::remove_dir_all(&staging).map_err(|error| error.to_string())?;
         }
-        extract_zip(&zip_path, &staging)?;
+        if let Err(message) = extract_zip(&zip_path, &staging) {
+            let _ = fs::remove_dir_all(&staging);
+            fs::remove_file(&zip_path).ok();
+            fs::remove_file(sidecar_path(&zip_path)).ok();
+            return Err(message);
+        }
         let backup = target.parent().unwrap_or(root).join(format!(
             "{}.old-{}",
             target
@@ -1188,10 +1316,9 @@ fn sanitize_component(value: &str) -> String {
             }
         })
         .collect();
-    if cleaned.is_empty() {
-        "client".into()
-    } else {
-        cleaned
+    match cleaned.as_str() {
+        "" | "." | ".." => "client".into(),
+        _ => cleaned,
     }
 }
 
@@ -1211,6 +1338,9 @@ fn sidecar_path(path: &Path) -> PathBuf {
     name.push(".url");
     PathBuf::from(name)
 }
+
+const DOWNLOAD_CHUNK: usize = 65_536;
+const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn download_to(url: &str, path: &Path) -> Result<(), String> {
     let client = download_client()?;
@@ -1260,25 +1390,58 @@ fn download_to(url: &str, path: &Path) -> Result<(), String> {
         fs::File::create(path).map_err(|error| error.to_string())?
     };
     fs::write(&sidecar, url).map_err(|error| error.to_string())?;
-    let mut buffer = [0u8; 65536];
+
+    // Читаем сеть в отдельном потоке: главный цикл ждёт канал с таймаутом,
+    // поэтому «зависший» сокет не останавливает прогресс навсегда.
+    let (sender, receiver) = mpsc::channel::<Result<Vec<u8>, String>>();
+    thread::spawn(move || {
+        let mut buffer = vec![0u8; DOWNLOAD_CHUNK];
+        loop {
+            match response.read(&mut buffer) {
+                Ok(0) => {
+                    let _ = sender.send(Ok(Vec::new()));
+                    break;
+                }
+                Ok(size) => {
+                    if sender.send(Ok(buffer[..size].to_vec())).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(Err(error.to_string()));
+                    break;
+                }
+            }
+        }
+    });
+
     let mut downloaded: u64 = offset;
     let mut last_report: u64 = downloaded;
     loop {
-        let read = response
-            .read(&mut buffer)
-            .map_err(|error| format!("обрыв загрузки: {error}"))?;
-        if read == 0 {
+        if download_cancelled() {
+            return Err("загрузка отменена".into());
+        }
+        let chunk = match receiver.recv_timeout(DOWNLOAD_STALL_TIMEOUT) {
+            Ok(Ok(chunk)) => chunk,
+            Ok(Err(message)) => return Err(format!("обрыв загрузки: {message}")),
+            Err(_) => {
+                return Err(format!(
+                    "загрузка приостановлена: нет данных {} секунд",
+                    DOWNLOAD_STALL_TIMEOUT.as_secs()
+                ))
+            }
+        };
+        if chunk.is_empty() {
             break;
         }
-        file.write_all(&buffer[..read])
-            .map_err(|error| error.to_string())?;
-        downloaded += read as u64;
-        if downloaded - last_report >= 262_144 || read < buffer.len() {
+        file.write_all(&chunk).map_err(|error| error.to_string())?;
+        downloaded += chunk.len() as u64;
+        if downloaded - last_report >= 262_144 || chunk.len() < DOWNLOAD_CHUNK {
             last_report = downloaded;
             let current = downloaded;
             set_state(|state| {
-                state.downloaded = current;
                 state.total = if total > 0 { total } else { current };
+                state.downloaded = current.min(state.total);
             });
         }
     }
@@ -1336,6 +1499,23 @@ mod tests {
         );
         assert_eq!(sanitize_component("///"), "___");
         assert_eq!(sanitize_component("   "), "client");
+        assert_eq!(sanitize_component(""), "client");
+        assert_eq!(sanitize_component("."), "client");
+        assert_eq!(sanitize_component(".."), "client");
+        assert_eq!(sanitize_component("a/b"), "a_b");
+        assert_eq!(sanitize_component("CON"), "CON");
+        assert_eq!(sanitize_component("сервер"), "______");
+    }
+
+    #[test]
+    fn shortens_hash_without_byte_slices() {
+        let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(hash_prefix(digest, 8), "ba7816bf");
+        assert_eq!(hash_prefix("кириллица", 8), "кириллиц");
+        assert_eq!(hash_prefix("", 8), "");
+        assert!(is_sha256_hex(digest));
+        assert!(!is_sha256_hex("abc"));
+        assert!(!is_sha256_hex("не хэш"));
     }
 
     #[test]

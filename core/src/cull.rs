@@ -277,9 +277,11 @@ mod tests {
         fs::write(blobs.join("0123456789abcdef0123456789abcdef.bin"), "x").unwrap();
         fs::write(blobs.join("fedcba9876543210fedcba9876543210.bin"), "y").unwrap();
         make_old(&blobs.join("fedcba9876543210fedcba9876543210.bin"), 2);
-        let mut config = Config::default();
-        config.install_dir = root.parent().unwrap().display().to_string();
-        config.blob_keep_days = 1;
+        let config = Config {
+            install_dir: root.parent().unwrap().display().to_string(),
+            blob_keep_days: 1,
+            ..Config::default()
+        };
         let report = cull_in(&config, &base.join("cache")).unwrap();
         assert_eq!(report.files, 1);
         assert!(blobs.join("0123456789abcdef0123456789abcdef.bin").exists());
@@ -301,9 +303,11 @@ mod tests {
         fs::write(engines.join(&middle), "b").unwrap();
         fs::write(engines.join(&old), "c").unwrap();
         make_old(&engines.join(&old), 3);
-        let mut config = Config::default();
-        config.install_dir = root.display().to_string();
-        config.engine_keep = 2;
+        let mut config = Config {
+            install_dir: root.display().to_string(),
+            engine_keep: 2,
+            ..Config::default()
+        };
         let report = cull_in(&config, &base.join("cache")).unwrap();
         assert_eq!(report.files, 1);
         assert!(!engines.join(&old).exists());

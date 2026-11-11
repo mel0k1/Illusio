@@ -3,13 +3,14 @@ use blake2::{Blake2b, Digest};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const MANIFEST_HEADER: &str = "Robust Content Manifest 1";
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(20);
 const DOWNLOAD_PROTOCOL: i32 = 1;
+pub const MAX_BLOB_SIZE: i64 = 1024 * 1024 * 1024; // 1 ГиБ
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ManifestEntry {
@@ -92,7 +93,9 @@ pub fn fetch_manifest(manifest_url: &str) -> Result<(Vec<ManifestEntry>, String)
         .unwrap_or(false);
     let reader = response;
     let raw = if compressed {
-        zstd::stream::decode_all(reader)
+        // Лимит на распаковку манифеста: больше 64 МБ не читаем,
+        // чтобы вредоносный сервер не устроил decompression bomb.
+        zstd::stream::decode_all(reader.take(64 * 1024 * 1024))
             .map_err(|error| format!("не удалось распаковать манифест: {error}"))?
     } else {
         let mut buffer = Vec::new();
@@ -125,10 +128,9 @@ pub fn sanitize_dir_name(value: &str) -> String {
             }
         })
         .collect();
-    if cleaned.is_empty() {
-        "content".into()
-    } else {
-        cleaned
+    match cleaned.as_str() {
+        "" | "." | ".." => "content".into(),
+        _ => cleaned,
     }
 }
 
@@ -222,6 +224,12 @@ pub fn download_blobs(
         if length_value < 0 {
             return Err("отрицательный размер файла в потоке".into());
         }
+        if length_value as i64 > MAX_BLOB_SIZE {
+            return Err(format!(
+                "файл в потоке слишком большой: {} байт",
+                length_value
+            ));
+        }
         buffer.clear();
         buffer.resize(length_value as usize, 0);
         stream
@@ -233,6 +241,15 @@ pub fn download_blobs(
                 .read_exact(&mut compressed_length)
                 .map_err(|error| format!("обрыв потока загрузки: {error}"))?;
             let compressed_value = i32::from_le_bytes(compressed_length);
+            if compressed_value < 0 {
+                return Err("отрицательный размер сжатого блока в потоке".into());
+            }
+            if compressed_value as i64 > MAX_BLOB_SIZE {
+                return Err(format!(
+                    "сжатый блок слишком большой: {} байт",
+                    compressed_value
+                ));
+            }
             if compressed_value > 0 {
                 compressed_buffer.clear();
                 compressed_buffer.resize(compressed_value as usize, 0);
@@ -318,7 +335,21 @@ pub fn assemble_overlay_zip(
 pub fn write_blob_cache(blobs_dir: &Path, hash_hex: &str, data: &[u8]) -> Result<PathBuf, String> {
     fs::create_dir_all(blobs_dir).map_err(|error| error.to_string())?;
     let path = blobs_dir.join(format!("{hash_hex}.bin"));
-    fs::write(&path, data).map_err(|error| error.to_string())?;
+    let temp = blobs_dir.join(format!("{hash_hex}.bin.tmp"));
+    let result = (|| -> Result<(), String> {
+        let mut file = fs::File::create(&temp).map_err(|error| error.to_string())?;
+        file.write_all(data).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        Ok(())
+    })();
+    if let Err(message) = result {
+        fs::remove_file(&temp).ok();
+        return Err(message);
+    }
+    if let Err(error) = fs::rename(&temp, &path) {
+        fs::remove_file(&temp).ok();
+        return Err(error.to_string());
+    }
     Ok(path)
 }
 
@@ -390,6 +421,29 @@ mod tests {
         assert_eq!(sanitize_dir_name(" forks/x "), "forks_x");
         assert_eq!(sanitize_dir_name("///"), "___");
         assert_eq!(sanitize_dir_name("  "), "content");
+        assert_eq!(sanitize_dir_name(""), "content");
+        assert_eq!(sanitize_dir_name("."), "content");
+        assert_eq!(sanitize_dir_name(".."), "content");
+        assert_eq!(sanitize_dir_name("a/b"), "a_b");
+        assert_eq!(sanitize_dir_name("CON"), "CON");
+        assert_eq!(sanitize_dir_name("сервер"), "______");
+    }
+
+    #[test]
+    fn writes_blob_cache_atomically() {
+        let dir = std::env::temp_dir().join(format!("illusio-blob-cache-{}", std::process::id()));
+        let blobs = dir.join("blobs");
+        let body = b"payload".to_vec();
+        let hash = blake2b_hex(&body);
+        let path = write_blob_cache(&blobs, &hash, &body).unwrap();
+        assert_eq!(path, blobs.join(format!("{hash}.bin")));
+        assert_eq!(fs::read(&path).unwrap(), body);
+        assert!(!blobs.join(format!("{hash}.bin.tmp")).exists());
+        // Перезапись поверх существующего файла тоже оставляет только итоговый блоб.
+        write_blob_cache(&blobs, &hash, &body).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), body);
+        assert!(!blobs.join(format!("{hash}.bin.tmp")).exists());
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

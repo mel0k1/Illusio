@@ -213,6 +213,14 @@ pub extern "C" fn illusio_download_state() -> *mut c_char {
 }
 
 #[no_mangle]
+pub extern "C" fn illusio_download_cancel() -> *mut c_char {
+    guarded(|| {
+        install::download_cancel();
+        serde_json::json!({"ok": true}).to_string()
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn illusio_start_verify(raw: *const c_char) -> *mut c_char {
     guarded(
         || match serde_json::from_str::<install::VerifySpec>(&read_ptr(raw)) {
@@ -381,11 +389,16 @@ pub unsafe extern "C" fn illusio_fetch_servers(raw: *const c_char) -> *mut c_cha
             hub::fetch_servers_multi(&[trimmed.to_string()])
         };
         match result {
-            Ok(servers) => serde_json::json!({
-                "ok": true,
-                "servers": servers,
-            })
-            .to_string(),
+            Ok((servers, warnings)) => {
+                let mut payload = serde_json::json!({
+                    "ok": true,
+                    "servers": servers,
+                });
+                if !warnings.is_empty() {
+                    payload["warnings"] = serde_json::json!(warnings);
+                }
+                payload.to_string()
+            }
             Err(message) => serde_json::json!({
                 "ok": false,
                 "error": message,
@@ -439,7 +452,7 @@ pub unsafe extern "C" fn illusio_open_url(url: *const c_char) -> *mut c_char {
 
 #[no_mangle]
 pub unsafe extern "C" fn illusio_open_path(path: *const c_char) -> *mut c_char {
-    guarded(|| match sys::open_with_system(&read_ptr(path)) {
+    guarded(|| match sys::open_path(&read_ptr(path)) {
         Ok(()) => serde_json::json!({"ok": true}).to_string(),
         Err(message) => serde_json::json!({
             "ok": false,
