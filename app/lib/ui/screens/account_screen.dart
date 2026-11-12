@@ -5,6 +5,7 @@ import '../../l10n/strings.dart';
 import '../../models/login_info.dart';
 import '../../state/app_controller.dart';
 import '../theme.dart';
+import '../widgets/account_avatar.dart';
 
 class AccountSheet extends StatefulWidget {
   const AccountSheet({super.key, required this.controller});
@@ -17,12 +18,14 @@ class AccountSheet extends StatefulWidget {
 
 class _AccountSheetState extends State<AccountSheet> {
   bool _loginMode = false;
-  bool _busy = false;
+  String _busyAction = '';
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final TextEditingController _tfa = TextEditingController();
   bool _needsTfa = false;
   bool _obscured = true;
+
+  bool get _busy => _busyAction.isNotEmpty;
 
   @override
   void dispose() {
@@ -80,11 +83,17 @@ class _AccountSheetState extends State<AccountSheet> {
     if (_busy) {
       return;
     }
-    setState(() => _busy = true);
+    setState(() => _busyAction = 'guest');
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final s = S.of(context);
-    await widget.controller.loginAsGuest();
+    try {
+      await widget.controller.loginAsGuest();
+    } finally {
+      if (mounted) {
+        setState(() => _busyAction = '');
+      }
+    }
     if (!mounted) {
       return;
     }
@@ -96,11 +105,17 @@ class _AccountSheetState extends State<AccountSheet> {
     if (_busy) {
       return;
     }
-    setState(() => _busy = true);
+    setState(() => _busyAction = 'switch:${account.username}');
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final s = S.of(context);
-    await widget.controller.switchAccount(account);
+    try {
+      await widget.controller.switchAccount(account);
+    } finally {
+      if (mounted) {
+        setState(() => _busyAction = '');
+      }
+    }
     if (!mounted) {
       return;
     }
@@ -148,16 +163,21 @@ class _AccountSheetState extends State<AccountSheet> {
           children: [
             if (current != null) ...[
               Center(
-                child: CircleAvatar(
-                  radius: 32,
-                  backgroundColor: scheme.primaryContainer,
-                  foregroundColor: scheme.onPrimaryContainer,
-                  child: Text(
-                    current.username.isEmpty
-                        ? '?'
-                        : current.username[0].toUpperCase(),
-                    style: theme.textTheme.headlineSmall,
-                  ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AccountAvatar(
+                      controller: controller,
+                      name: current.username,
+                      radius: 32,
+                      letterStyle: theme.textTheme.headlineSmall,
+                    ),
+                    Positioned(
+                      bottom: -2,
+                      right: -2,
+                      child: _AvatarEditButton(controller: controller),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -182,6 +202,8 @@ class _AccountSheetState extends State<AccountSheet> {
               for (final account in others)
                 _AccountTile(
                   account: account,
+                  busy: _busyAction == 'switch:${account.username}',
+                  disabled: _busy,
                   onTap: _busy ? null : () => _switch(account),
                 ),
               const SizedBox(height: 20),
@@ -194,7 +216,13 @@ class _AccountSheetState extends State<AccountSheet> {
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _busy ? null : _loginGuest,
-              icon: const Icon(Icons.person_off_outlined, size: 20),
+              icon: _busyAction == 'guest'
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.person_off_outlined, size: 20),
               label: Text(S.of(context).loginAsGuest),
             ),
             const SizedBox(height: 10),
@@ -206,20 +234,35 @@ class _AccountSheetState extends State<AccountSheet> {
             const SizedBox(height: 10),
             if (current != null)
               TextButton.icon(
-                onPressed: () async {
-                  final navigator = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final s = S.of(context);
-                  await widget.controller.logout();
-                  if (!mounted) {
-                    return;
-                  }
-                  navigator.pop();
-                  messenger.showSnackBar(
-                    illusioSnackBar(s.loggedOut),
-                  );
-                },
-                icon: const Icon(Icons.logout, size: 20),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        final navigator = Navigator.of(context);
+                        final messenger = ScaffoldMessenger.of(context);
+                        final s = S.of(context);
+                        setState(() => _busyAction = 'logout');
+                        try {
+                          await widget.controller.logout();
+                        } finally {
+                          if (mounted) {
+                            setState(() => _busyAction = '');
+                          }
+                        }
+                        if (!mounted) {
+                          return;
+                        }
+                        navigator.pop();
+                        messenger.showSnackBar(
+                          illusioSnackBar(s.loggedOut),
+                        );
+                      },
+                icon: _busyAction == 'logout'
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.logout, size: 20),
                 label: Text(S.of(context).logout),
                 style: TextButton.styleFrom(foregroundColor: scheme.error),
               ),
@@ -355,17 +398,121 @@ class _AccountSheetState extends State<AccountSheet> {
   }
 }
 
+class _AvatarEditButton extends StatefulWidget {
+  const _AvatarEditButton({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_AvatarEditButton> createState() => _AvatarEditButtonState();
+}
+
+class _AvatarEditButtonState extends State<_AvatarEditButton> {
+  bool _busy = false;
+
+  Future<void> _tap() async {
+    if (_busy) {
+      return;
+    }
+    if (widget.controller.avatarFile == null) {
+      await _pick();
+      return;
+    }
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextButton.icon(
+                onPressed: () => Navigator.of(sheetContext).pop('choose'),
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
+                label: Text(S.of(sheetContext).chooseAvatar),
+              ),
+              TextButton.icon(
+                onPressed: () => Navigator.of(sheetContext).pop('remove'),
+                icon: const Icon(Icons.no_photography_outlined, size: 20),
+                label: Text(S.of(sheetContext).removeAvatar),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (action == 'choose') {
+      await _pick();
+    } else if (action == 'remove') {
+      await widget.controller.removeAvatar();
+    }
+  }
+
+  Future<void> _pick() async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
+    final result = await widget.controller.chooseAvatar();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busy = false);
+    if (result == AvatarPick.invalid) {
+      messenger.showSnackBar(illusioSnackBar(s.avatarNotImage));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primary,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _tap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: _busy
+              ? const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  Icons.add_photo_alternate_outlined,
+                  size: 15,
+                  color: scheme.onPrimary,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AccountTile extends StatelessWidget {
-  const _AccountTile({required this.account, required this.onTap});
+  const _AccountTile({
+    required this.account,
+    required this.onTap,
+    this.busy = false,
+    this.disabled = false,
+  });
 
   final LoginInfo account;
   final VoidCallback? onTap;
+  final bool busy;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
       onTap: onTap,
+      enabled: !disabled,
       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       leading: CircleAvatar(
@@ -385,7 +532,13 @@ class _AccountTile extends StatelessWidget {
               color: scheme.onSurfaceVariant,
             ),
       ),
-      trailing: const Icon(Icons.chevron_right, size: 20),
+      trailing: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.chevron_right, size: 20),
       tileColor: scheme.surfaceContainerLow,
     );
   }

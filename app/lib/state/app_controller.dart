@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ffi/bindings.dart';
@@ -24,6 +25,8 @@ class CrashInfo {
   final String logTail;
 }
 
+enum AvatarPick { done, cancelled, invalid }
+
 class AppController extends ChangeNotifier {
   AppController() : favorites = [], accounts = [] {
     ready = _loadConfig();
@@ -32,6 +35,7 @@ class AppController extends ChangeNotifier {
   late final Future<void> ready;
 
   String installDir = '';
+  String avatarPath = '';
   List<String> launchArgs = [];
   String configError = '';
 
@@ -162,6 +166,7 @@ class AppController extends ChangeNotifier {
 
   DownloadStateInfo downloadState = DownloadStateInfo.empty;
   bool connecting = false;
+  bool _cancelRequested = false;
 
   String? pendingConnect;
 
@@ -192,6 +197,7 @@ class AppController extends ChangeNotifier {
     if (result['ok'] == true) {
       final config = (result['config'] as Map?) ?? const {};
       installDir = config['install_dir']?.toString() ?? '';
+      avatarPath = config['avatar_path']?.toString() ?? '';
       launchArgs = ((config['launch_args'] as List?) ?? const [])
           .map((value) => value.toString())
           .toList();
@@ -642,6 +648,7 @@ class AppController extends ChangeNotifier {
   Future<void> saveConfig() async {
     final payload = jsonEncode({
       'install_dir': installDir,
+      'avatar_path': avatarPath,
       'launch_args': launchArgs,
       'last_server': selectedServer?.url ?? '',
       'login': login?.toJson(),
@@ -718,6 +725,69 @@ class AppController extends ChangeNotifier {
     );
     _saveChain = task.catchError((Object _) {});
     await task;
+  }
+
+  String? get avatarFile {
+    if (avatarPath.isEmpty) {
+      return null;
+    }
+    return File(avatarPath).existsSync() ? avatarPath : null;
+  }
+
+  Future<AvatarPick> chooseAvatar() async {
+    const extensions = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'];
+    final type = XTypeGroup(label: s.avatarImage, extensions: extensions);
+    final file = await openFile(acceptedTypeGroups: [type]);
+    if (file == null) {
+      return AvatarPick.cancelled;
+    }
+    final extension =
+        file.path.contains('.') ? file.path.split('.').last.toLowerCase() : '';
+    if (!extensions.contains(extension)) {
+      return AvatarPick.invalid;
+    }
+    final configDir = await configDirPath();
+    if (configDir.isEmpty) {
+      return AvatarPick.invalid;
+    }
+    final separator = Platform.isWindows ? '\\' : '/';
+    final target = '$configDir${separator}avatar.$extension';
+    if (avatarPath.isNotEmpty && avatarPath != target) {
+      final old = File(avatarPath);
+      if (old.existsSync()) {
+        try {
+          old.deleteSync();
+        } catch (_) {}
+      }
+    }
+    await File(file.path).copy(target);
+    avatarPath = target;
+    notifyListeners();
+    saveConfig();
+    return AvatarPick.done;
+  }
+
+  Future<void> removeAvatar() async {
+    if (avatarPath.isEmpty) {
+      return;
+    }
+    final file = File(avatarPath);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {}
+    }
+    avatarPath = '';
+    notifyListeners();
+    saveConfig();
+  }
+
+  Future<void> cancelConnect() async {
+    if (!connecting && !downloadState.running) {
+      return;
+    }
+    _cancelRequested = true;
+    await Isolate.run(Core.downloadCancel);
   }
 
   bool privacyAccepted(ServerPrivacyInfo? policy) {
@@ -1860,6 +1930,7 @@ class AppController extends ChangeNotifier {
       return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
+    _cancelRequested = false;
     selectedServer = server;
     downloadState = DownloadStateInfo.empty;
     notifyListeners();
@@ -1899,6 +1970,7 @@ class AppController extends ChangeNotifier {
       return {'ok': false, 'error': s.connectBusy};
     }
     connecting = true;
+    _cancelRequested = false;
     selectedServer = null;
     statusInfo = null;
     downloadState = DownloadStateInfo.empty;
@@ -1934,13 +2006,19 @@ class AppController extends ChangeNotifier {
       downloadState = DownloadStateInfo.fromMap(result['state']);
       notifyListeners();
       if (downloadState.isDone) {
+        _cancelRequested = false;
         connecting = false;
         notifyListeners();
         return _launchAfterDownload(server);
       }
       if (downloadState.isError) {
+        final cancelled = _cancelRequested;
+        _cancelRequested = false;
         connecting = false;
         notifyListeners();
+        if (cancelled) {
+          return {'ok': false, 'cancelled': true, 'error': s.downloadCancelled};
+        }
         return {'ok': false, 'error': downloadState.error};
       }
     }

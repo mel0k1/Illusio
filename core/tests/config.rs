@@ -90,6 +90,7 @@ fn config_roundtrip() {
         card_map: true,
         card_preset: true,
         card_round: true,
+        avatar_path: "/cfg/avatar.png".into(),
     };
     save_to(&path, &config).expect("save failed");
     let loaded = load_from(&path).expect("load failed");
@@ -108,6 +109,7 @@ fn config_roundtrip() {
     assert_eq!(loaded.res_packs_enabled, vec!["HiTech".to_string()]);
     assert!(loaded.dump_resources);
     assert_eq!(loaded.hubs, vec!["https://hub.example.com/".to_string()]);
+    assert_eq!(loaded.avatar_path, "/cfg/avatar.png");
     assert_eq!(loaded.guest_username, "Гость");
     assert!(loaded.client_logs);
     assert_eq!(loaded.filter_tags, vec!["lang:ru".to_string()]);

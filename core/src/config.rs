@@ -192,6 +192,8 @@ pub struct Config {
     pub card_preset: bool,
     #[serde(default = "default_true")]
     pub card_round: bool,
+    #[serde(default)]
+    pub avatar_path: String,
 }
 
 fn default_dock_side() -> String {
@@ -361,12 +363,10 @@ pub fn save_to(path: &PathBuf, config: &Config) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
     let backup = path.with_extension("json.bak");
     if path.exists() {
-        // Резервная копия желательна, но не обязательна: не валим сохранение.
         if let Err(error) = fs::copy(path, &backup) {
             eprintln!("illusio: не удалось создать резервную копию конфигурации: {error}");
         }
     }
-    // Уникальное имя temp-файла: параллельные сохранения (pid + счётчик) не топчут друг друга.
     let sequence = SAVE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let file_name = path
         .file_name()

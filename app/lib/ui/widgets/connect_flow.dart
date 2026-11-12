@@ -48,6 +48,16 @@ Future<void> connectFlow(
   );
 }
 
+Future<void> showDownloadStatus(
+  BuildContext context,
+  AppController controller,
+) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => _DownloadStatusDialog(controller: controller),
+  );
+}
+
 Future<void> bundleFlow(
   BuildContext context,
   AppController controller,
@@ -135,6 +145,7 @@ class _ConnectDialog extends StatefulWidget {
 
 class _ConnectDialogState extends State<_ConnectDialog> {
   bool _visible = true;
+  bool _cancelling = false;
 
   @override
   void initState() {
@@ -154,9 +165,11 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     }
     messenger.showSnackBar(
       illusioSnackBar(
-        result['ok'] == true
-            ? s.clientStarted
-            : (result['error']?.toString() ?? s.connectFailed),
+        result['cancelled'] == true
+            ? s.downloadCancelled
+            : result['ok'] == true
+                ? s.clientStarted
+                : (result['error']?.toString() ?? s.connectFailed),
       ),
     );
   }
@@ -166,6 +179,11 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     Navigator.of(context).pop();
   }
 
+  void _cancel() {
+    setState(() => _cancelling = true);
+    widget.controller.cancelConnect();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_visible) {
@@ -173,16 +191,76 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     }
     return ListenableBuilder(
       listenable: widget.controller,
-      builder: (context, _) => AlertDialog(
-        title: Text(widget.title),
-        content: _DownloadBody(state: widget.controller.downloadState),
-        actions: [
-          TextButton(
-            onPressed: _hide,
-            child: Text(S.of(context).hide),
+      builder: (context, _) {
+        final state = widget.controller.downloadState;
+        final active =
+            widget.controller.connecting || state.running;
+        return AlertDialog(
+          title: Text(widget.title),
+          content: _DownloadBody(state: state),
+          actions: [
+            if (active && !state.isDone && !state.isError)
+              TextButton(
+                onPressed: _cancelling ? null : _cancel,
+                child: _cancelling
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(S.of(context).cancelling),
+                        ],
+                      )
+                    : Text(S.of(context).cancel),
+              ),
+            TextButton(
+              onPressed: _hide,
+              child: Text(S.of(context).hide),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DownloadStatusDialog extends StatelessWidget {
+  const _DownloadStatusDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final state = controller.downloadState;
+        final active = controller.connecting || state.running;
+        return AlertDialog(
+          title: Text(
+            controller.selectedServer?.name.isNotEmpty == true
+                ? controller.selectedServer!.name
+                : s.connecting,
           ),
-        ],
-      ),
+          content: _DownloadBody(state: state),
+          actions: [
+            if (active && !state.isDone && !state.isError)
+              TextButton(
+                onPressed: controller.cancelConnect,
+                child: Text(s.cancel),
+              ),
+            FilledButton.tonal(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(s.done),
+            ),
+          ],
+        );
+      },
     );
   }
 }

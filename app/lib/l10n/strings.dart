@@ -41,6 +41,10 @@ class S {
       ru ? 'как отобразить в избранном' : 'how it appears in favorites';
   String get serverAddress => ru ? 'Адрес сервера' : 'Server address';
   String get cancel => ru ? 'Отмена' : 'Cancel';
+  String get downloadCancelled =>
+      ru ? 'Загрузка отменена' : 'Download cancelled';
+  String get cancelling => ru ? 'Отменяем' : 'Cancelling';
+  String get showStatus => ru ? 'Статус' : 'Status';
   String get save => ru ? 'Сохранить' : 'Save';
   String get raiseTop => ru ? 'Поднять наверх' : 'Move to top';
   String get edit => ru ? 'Изменить' : 'Edit';
@@ -88,6 +92,10 @@ class S {
       ru ? 'Скрывать полные сервера' : 'Hide full servers';
   String get loadingList =>
       ru ? 'Получаем список серверов' : 'Fetching server list';
+  String get nothingFound => ru ? 'Ничего не найдено' : 'Nothing found';
+  String get nothingFoundHint => ru
+      ? 'Поиск и фильтры не дали результатов. Сбросьте их или обновите список.'
+      : 'Search and filters matched nothing. Clear them or refresh the list.';
   String get hubUnavailable => ru ? 'Хаб недоступен' : 'Hub unavailable';
   String get verifyStuck =>
       ru ? 'Проверка перестала отвечать' : 'Verify stopped responding';
@@ -580,6 +588,11 @@ class S {
       ru ? 'Сессия до $time' : 'Session until $time';
   String accountSwitched(String name) =>
       ru ? 'Аккаунт: $name' : 'Account: $name';
+  String get avatarImage => ru ? 'изображения' : 'images';
+  String get chooseAvatar => ru ? 'Выбрать аватар' : 'Choose avatar';
+  String get removeAvatar => ru ? 'Убрать аватар' : 'Remove avatar';
+  String get avatarNotImage =>
+      ru ? 'нужен файл изображения' : 'an image file is required';
 
   String get phaseServerData =>
       ru ? 'Получаем данные сервера' : 'Fetching server data';

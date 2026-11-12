@@ -223,6 +223,7 @@ class _ServersScreenState extends State<ServersScreen> {
     if (controller.hubError.isNotEmpty && controller.hubServers.isEmpty) {
       return _HubError(
         message: controller.hubError,
+        loading: controller.hubLoading,
         onRetry: () => controller.loadHub(),
       );
     }
@@ -239,6 +240,42 @@ class _ServersScreenState extends State<ServersScreen> {
                   .textTheme
                   .bodyMedium
                   ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+    if (servers.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => controller.loadHub(),
+        color: scheme.primary,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, controller.listBottomPad),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 56),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.search_off,
+                    size: 44,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    S.of(context).nothingFound,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    S.of(context).nothingFoundHint,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -560,10 +597,15 @@ class _Monogram extends StatelessWidget {
 }
 
 class _HubError extends StatelessWidget {
-  const _HubError({required this.message, required this.onRetry});
+  const _HubError({
+    required this.message,
+    required this.onRetry,
+    this.loading = false,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -590,8 +632,14 @@ class _HubError extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             FilledButton.tonalIcon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: loading ? null : onRetry,
+              icon: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 20),
               label: Text(S.of(context).retry),
             ),
           ],

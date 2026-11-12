@@ -4,6 +4,7 @@ import '../l10n/strings.dart';
 import '../models/server.dart';
 import '../state/app_controller.dart';
 import 'theme.dart';
+import 'widgets/account_avatar.dart';
 import 'screens/account_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/mods_screen.dart';
@@ -302,6 +303,8 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) {
         final labels = dockItems.map((item) => item.label(s)).toList();
         final side = widget.controller.dockSide;
+        final busy = widget.controller.connecting ||
+            widget.controller.downloadState.running;
         final content = Column(
           children: [
             _SlimBar(
@@ -317,16 +320,41 @@ class _AppShellState extends State<AppShell> {
           ],
         );
         void select(int value) => setState(() => _index = value);
+        final chip = _BusyChip(controller: widget.controller);
         final body = switch (side) {
           'left' => Row(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
-                  child: _Rail(
-                    index: _index,
-                    labels: labels,
-                    corners: widget.controller.corners,
-                    onSelect: select,
+                  child: Column(
+                    children: [
+                      _Rail(
+                        index: _index,
+                        labels: labels,
+                        corners: widget.controller.corners,
+                        onSelect: select,
+                      ),
+                      AnimatedSwitcher(
+                        duration: spatialFast,
+                        switchInCurve: expressCurve,
+                        switchOutCurve: exitCurve,
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                          scale: animation,
+                          child: FadeTransition(
+                              opacity: animation, child: child),
+                        ),
+                        child: busy
+                            ? Padding(
+                                key: const ValueKey('rail-chip'),
+                                padding: const EdgeInsets.only(top: 10),
+                                child: chip,
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey('rail-empty'),
+                              ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(child: content),
@@ -337,11 +365,35 @@ class _AppShellState extends State<AppShell> {
                 Expanded(child: content),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
-                  child: _Rail(
-                    index: _index,
-                    labels: labels,
-                    corners: widget.controller.corners,
-                    onSelect: select,
+                  child: Column(
+                    children: [
+                      _Rail(
+                        index: _index,
+                        labels: labels,
+                        corners: widget.controller.corners,
+                        onSelect: select,
+                      ),
+                      AnimatedSwitcher(
+                        duration: spatialFast,
+                        switchInCurve: expressCurve,
+                        switchOutCurve: exitCurve,
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                          scale: animation,
+                          child: FadeTransition(
+                              opacity: animation, child: child),
+                        ),
+                        child: busy
+                            ? Padding(
+                                key: const ValueKey('rail-chip'),
+                                padding: const EdgeInsets.only(top: 10),
+                                child: chip,
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey('rail-empty'),
+                              ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -355,11 +407,37 @@ class _AppShellState extends State<AppShell> {
           ),
           extendBody: side == 'bottom',
           bottomNavigationBar: side == 'bottom'
-              ? _BottomDock(
-                  index: _index,
-                  labels: labels,
-                  corners: widget.controller.corners,
-                  onSelect: select,
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: spatialFast,
+                      switchInCurve: expressCurve,
+                      switchOutCurve: exitCurve,
+                      transitionBuilder: (child, animation) =>
+                          ScaleTransition(
+                        scale: animation,
+                        child: FadeTransition(
+                            opacity: animation, child: child),
+                      ),
+                      child: busy
+                          ? Padding(
+                              key: const ValueKey('dock-chip'),
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 0, 20, 6),
+                              child: Center(child: chip),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('dock-empty'),
+                            ),
+                    ),
+                    _BottomDock(
+                      index: _index,
+                      labels: labels,
+                      corners: widget.controller.corners,
+                      onSelect: select,
+                    ),
+                  ],
                 )
               : null,
         );
@@ -397,7 +475,11 @@ class _SlimBar extends StatelessWidget {
               listenable: controller,
               builder: (context, _) {
                 final name = controller.login?.username;
-                return _AccountChip(name: name, onTap: onAccount);
+                return _AccountChip(
+                  controller: controller,
+                  name: name,
+                  onTap: onAccount,
+                );
               },
             ),
           ],
@@ -408,8 +490,13 @@ class _SlimBar extends StatelessWidget {
 }
 
 class _AccountChip extends StatelessWidget {
-  const _AccountChip({required this.name, required this.onTap});
+  const _AccountChip({
+    required this.controller,
+    required this.name,
+    required this.onTap,
+  });
 
+  final AppController controller;
   final String? name;
   final VoidCallback onTap;
 
@@ -428,18 +515,14 @@ class _AccountChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircleAvatar(
+              AccountAvatar(
+                controller: controller,
+                name: name ?? '',
                 radius: 14,
-                backgroundColor: name == null
-                    ? scheme.outlineVariant
-                    : scheme.primaryContainer,
-                foregroundColor: name == null
-                    ? scheme.onSurfaceVariant
-                    : scheme.onPrimaryContainer,
-                child: Text(
-                  name == null ? '?' : name![0].toUpperCase(),
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
+                idleColor:
+                    name == null ? scheme.outlineVariant : null,
+                onIdleColor:
+                    name == null ? scheme.onSurfaceVariant : null,
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 8, right: 10),
@@ -451,6 +534,63 @@ class _AccountChip extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BusyChip extends StatelessWidget {
+  const _BusyChip({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final state = controller.downloadState;
+    final progress = state.total > 0 ? state.progress : null;
+    return Material(
+      color: scheme.surfaceContainer,
+      shape: StadiumBorder(side: BorderSide(color: scheme.outlineVariant)),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () => showDownloadStatus(context, controller),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 9, 16, 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 15,
+                height: 15,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  value: progress,
+                ),
+              ),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: Text(
+                  state.phaseLabel(S.of(context)),
+                  style: theme.textTheme.labelLarge
+                      ?.copyWith(color: scheme.onSurface),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (progress != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
