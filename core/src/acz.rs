@@ -93,8 +93,6 @@ pub fn fetch_manifest(manifest_url: &str) -> Result<(Vec<ManifestEntry>, String)
         .unwrap_or(false);
     let reader = response;
     let raw = if compressed {
-        // Лимит на распаковку манифеста: больше 64 МБ не читаем,
-        // чтобы вредоносный сервер не устроил decompression bomb.
         zstd::stream::decode_all(reader.take(64 * 1024 * 1024))
             .map_err(|error| format!("не удалось распаковать манифест: {error}"))?
     } else {
@@ -439,7 +437,6 @@ mod tests {
         assert_eq!(path, blobs.join(format!("{hash}.bin")));
         assert_eq!(fs::read(&path).unwrap(), body);
         assert!(!blobs.join(format!("{hash}.bin.tmp")).exists());
-        // Перезапись поверх существующего файла тоже оставляет только итоговый блоб.
         write_blob_cache(&blobs, &hash, &body).unwrap();
         assert_eq!(fs::read(&path).unwrap(), body);
         assert!(!blobs.join(format!("{hash}.bin.tmp")).exists());

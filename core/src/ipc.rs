@@ -111,7 +111,6 @@ fn socket_server() {
         };
         let mut buffer = Vec::new();
         let mut limited = stream.take(MAX_PAYLOAD);
-        // Переполнение лимита — ошибка: такой payload не разбираем.
         let ok = limited.read_to_end(&mut buffer).is_ok() && (buffer.len() as u64) < MAX_PAYLOAD;
         if ok {
             for link in parse_payload(&buffer) {
@@ -148,7 +147,6 @@ fn send(body: &[u8]) -> bool {
             std::ptr::null_mut(),
         )
     };
-    // У канала один инстанс: при ERROR_PIPE_BUSY ждём и пробуем снова.
     while handle == INVALID_HANDLE_VALUE || handle.is_null() {
         let error = unsafe { GetLastError() };
         if error != ERROR_PIPE_BUSY || Instant::now() >= deadline {

@@ -112,7 +112,6 @@ pub fn platform_asset_suffix() -> &'static str {
 }
 
 fn update_client() -> Result<reqwest::blocking::Client, String> {
-    // Короткий общий таймаут — только для небольших JSON-запросов к API релизов.
     crate::http::with_route(
         reqwest::blocking::Client::builder(),
         crate::http::Route::Updates,
@@ -125,8 +124,6 @@ fn update_client() -> Result<reqwest::blocking::Client, String> {
 }
 
 fn download_client() -> Result<reqwest::blocking::Client, String> {
-    // Архив релиза качается долго: жёсткий таймаут только на соединение,
-    // общий — щедрый (час), иначе большие обновления всегда падали.
     crate::http::with_route(
         reqwest::blocking::Client::builder(),
         crate::http::Route::Updates,
@@ -267,7 +264,6 @@ pub fn release_progress() -> ReleaseState {
 
 static RELEASE_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Сбрасывает флаг reentrancy-защиты install_release при любом выходе.
 struct ReleaseGuard;
 
 impl Drop for ReleaseGuard {
@@ -276,7 +272,6 @@ impl Drop for ReleaseGuard {
     }
 }
 
-/// Разрешены только релизы этого проекта: страница релизов на GitHub и CDN раздачи.
 fn is_allowed_asset_url(raw: &str) -> bool {
     let trimmed = raw.trim();
     let Some((scheme, rest)) = trimmed.split_once("://") else {
@@ -508,8 +503,6 @@ fn apply_linux(archive: &Path, install: &Path, exe: &Path) -> Result<(), String>
     let pid = std::process::id();
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
-    // Распаковываем в staging рядом с установкой, только потом заменяем каталог:
-    // старая версия остаётся на месте, если tar упал.
     let install_name = install
         .file_name()
         .and_then(|value| value.to_str())
@@ -560,8 +553,6 @@ fn apply_macos(
     let pid = std::process::id();
     let script = script_dir().join("update.sh");
     fs::create_dir_all(script.parent().unwrap()).map_err(|error| error.to_string())?;
-    // Распаковываем во временную папку, заменяем .app только после успешного unzip,
-    // старая версия на время подмены переезжает в .old.
     let stage = extracted.join("app");
     let stage_app = stage.join(
         app_path

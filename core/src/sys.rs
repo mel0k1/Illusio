@@ -37,7 +37,6 @@ pub fn ensure_dir(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-/// Строгая проверка: открываем только http/https ссылки.
 fn is_http_url(target: &str) -> bool {
     let trimmed = target.trim();
     let Some((scheme, rest)) = trimmed.split_once("://") else {
@@ -56,7 +55,6 @@ pub fn open_with_system(target: &str) -> Result<(), String> {
     open_any(target)
 }
 
-/// Открытие локального пути (каталог/файл) без ограничений на схему.
 pub fn open_path(path: &str) -> Result<(), String> {
     if path.trim().is_empty() {
         return Err("путь не указан".into());
@@ -90,7 +88,6 @@ fn spawn_open(program: &str, target: &str) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn shell_open(target: &str) -> Result<(), String> {
-    // ShellExecuteW вместо `cmd /C start` — нет shell, нет инъекций через кавычки.
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     const SW_SHOWNORMAL: i32 = 1;
     let operation: Vec<u16> = "open\0".encode_utf16().collect();

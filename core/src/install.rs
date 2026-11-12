@@ -341,7 +341,6 @@ pub fn snapshot() -> DownloadState {
 
 static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
-/// Запрошенная извне отмена текущей загрузки/проверки.
 pub fn download_cancel() {
     DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
 }
@@ -350,8 +349,6 @@ fn download_cancelled() -> bool {
     DOWNLOAD_CANCEL.load(Ordering::SeqCst)
 }
 
-/// Страховка от зависшего состояния: если поток задания паникует
-/// вне catch_unwind, Drop сбрасывает running и выставляет ошибку.
 struct JobGuard {
     armed: bool,
 }
@@ -958,8 +955,6 @@ fn download_content_zip(build: &ServerBuild, root: &Path) -> Result<PathBuf, Str
     }
     let dir = root.join("bundles").join(folder_name);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    // Неверный (не-hex) хэш считаем отсутствующим: его нельзя ни проверить,
-    // ни безопасно вставить в имя файла.
     let hash_part = build.hash.trim().to_ascii_lowercase();
     let hash_hex = if is_sha256_hex(&hash_part) {
         hash_part
@@ -1173,14 +1168,12 @@ fn cache_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "не удалось определить каталог кэша".into())
 }
 
-/// Целостность блоба в кэше: размер > 0 и blake2b совпадает с именем файла.
 fn blob_healthy(blobs: &Path, hash_hex: &str) -> bool {
     fs::read(blobs.join(format!("{hash_hex}.bin")))
         .map(|data| !data.is_empty() && acz::blake2b_hex(&data) == hash_hex)
         .unwrap_or(false)
 }
 
-/// Суммарный размер блобов в кэше — для прогресса сборки в байтах.
 fn blob_bytes(blobs: &Path, entries: &[acz::ManifestEntry]) -> u64 {
     entries
         .iter()
@@ -1196,7 +1189,6 @@ fn is_sha256_hex(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Первые `length` символов хэша без срезов по байтам (безопасно для юникода).
 fn hash_prefix(hash: &str, length: usize) -> String {
     hash.chars().take(length).collect()
 }
@@ -1391,8 +1383,6 @@ fn download_to(url: &str, path: &Path) -> Result<(), String> {
     };
     fs::write(&sidecar, url).map_err(|error| error.to_string())?;
 
-    // Читаем сеть в отдельном потоке: главный цикл ждёт канал с таймаутом,
-    // поэтому «зависший» сокет не останавливает прогресс навсегда.
     let (sender, receiver) = mpsc::channel::<Result<Vec<u8>, String>>();
     thread::spawn(move || {
         let mut buffer = vec![0u8; DOWNLOAD_CHUNK];

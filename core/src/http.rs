@@ -112,8 +112,6 @@ fn apply_proxy(
         Some(url) => match reqwest::Proxy::all(&url) {
             Ok(value) => builder.proxy(value),
             Err(error) => {
-                // Пользователь настроил прокси, но URL не собрали — молча
-                // отключать его нельзя, предупреждаем и идём без прокси.
                 eprintln!("illusio: не удалось применить прокси {url}: {error}");
                 builder
             }

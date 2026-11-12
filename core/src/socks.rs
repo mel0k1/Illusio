@@ -408,7 +408,6 @@ pub fn prepare_udp_relay(
     let game_socket = UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
         .map_err(|error| format!("не удалось открыть UDP-сокет для игры: {error}"))?;
     let control_local = control.local_addr().map_err(|error| error.to_string())?;
-    // Локальный прокси: релей слушаем на 127.0.0.1, а не на всех интерфейсах.
     let bind_ip = if control_local.ip().is_loopback() {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     } else {
@@ -473,8 +472,6 @@ impl PreparedRelay {
                     Ok(value) => value,
                     Err(_) => continue,
                 };
-                // Адрес клиента учится один раз — по первому пакету игры;
-                // пакеты с других адресов выбрасываем.
                 {
                     let mut guard = match upstream.client_endpoint.lock() {
                         Ok(guard) => guard,
@@ -512,8 +509,6 @@ impl PreparedRelay {
                 Ok(value) => value,
                 Err(_) => continue,
             };
-            // relay_endpoint зафиксирован ответом udp_associate:
-            // всё, что приходит с другого адреса, — не наш прокси.
             let expected = match downstream.relay_endpoint.lock() {
                 Ok(guard) => *guard,
                 Err(_) => return,
