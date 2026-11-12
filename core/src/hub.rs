@@ -1,19 +1,10 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::thread;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_HUB_URL: &str = "https://hub.spacestation14.com/";
 pub const FALLBACK_HUB_URL: &str = "https://hub.fallback.spacestation14.com/";
-
-fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Default + serde::Deserialize<'de>,
-{
-    let value: Option<T> = Option::deserialize(deserializer)?;
-    Ok(value.unwrap_or_default())
-}
 
 fn normalize_tag(tag: &str) -> String {
     let clean = tag.trim().to_lowercase();
@@ -36,7 +27,7 @@ fn merge_tags(primary: Vec<String>, extra: Vec<String>) -> Vec<String> {
     merged
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct HubServer {
     #[serde(default)]
     pub address: String,
@@ -80,57 +71,128 @@ pub struct ServerPing {
     pub online: bool,
 }
 
-#[derive(Debug, Deserialize)]
-struct HubEntry {
-    #[serde(default)]
-    address: String,
-    #[serde(default, rename = "statusData", deserialize_with = "null_to_default")]
-    status_data: HubStatusData,
-    #[serde(default, rename = "inferredTags", deserialize_with = "null_to_default")]
-    inferred_tags: Vec<String>,
+fn value_string(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(serde_json::Value::String(text)) => text.clone(),
+        Some(serde_json::Value::Number(number)) => number.to_string(),
+        _ => String::new(),
+    }
 }
 
-#[derive(Debug, Deserialize, Default)]
-struct HubStatusData {
-    #[serde(default, deserialize_with = "null_to_default")]
-    name: String,
-    #[serde(default, deserialize_with = "null_to_default")]
-    players: i64,
-    #[serde(
-        default,
-        deserialize_with = "null_to_default",
-        rename = "soft_max_players"
-    )]
-    soft_max_players: i64,
-    #[serde(default, deserialize_with = "null_to_default")]
-    tags: Vec<String>,
-    #[serde(default, deserialize_with = "null_to_default")]
-    preset: String,
-    #[serde(default, deserialize_with = "null_to_default")]
-    map: String,
-    #[serde(default, deserialize_with = "null_to_default", rename = "run_level")]
-    run_level: i64,
-    #[serde(default, deserialize_with = "null_to_default", rename = "round_id")]
-    round_id: i64,
-    #[serde(
-        default,
-        deserialize_with = "null_to_default",
-        rename = "statusMessage"
-    )]
-    status_message: String,
-    #[serde(
-        default,
-        deserialize_with = "null_to_default",
-        rename = "round_start_time",
-        alias = "roundStartTime"
-    )]
-    round_start_time: String,
-    #[serde(default, deserialize_with = "null_to_default")]
-    panic_bunker: bool,
-    #[serde(default, deserialize_with = "null_to_default")]
-    baby_jail: bool,
-    #[serde(default, deserialize_with = "null_to_default")]
-    queue: i64,
+fn value_int(value: Option<&serde_json::Value>) -> i64 {
+    match value {
+        Some(serde_json::Value::Number(number)) => number
+            .as_i64()
+            .or_else(|| number.as_f64().map(|value| value as i64))
+            .unwrap_or(0),
+        Some(serde_json::Value::String(text)) => text.trim().parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+fn value_bool(value: Option<&serde_json::Value>) -> bool {
+    matches!(value, Some(serde_json::Value::Bool(true)))
+}
+
+fn value_strings(value: Option<&serde_json::Value>) -> Vec<String> {
+    match value {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn status_object(
+    entry: &serde_json::Map<String, serde_json::Value>,
+) -> Option<&serde_json::Map<String, serde_json::Value>> {
+    entry
+        .get("statusData")
+        .or_else(|| entry.get("status"))
+        .and_then(|value| value.as_object())
+}
+
+fn hub_server_from_value(value: &serde_json::Value) -> Option<HubServer> {
+    let entry = value.as_object()?;
+    let address = value_string(entry.get("address").or_else(|| entry.get("url")))
+        .trim()
+        .to_string();
+    if address.is_empty() {
+        return None;
+    }
+    let status = status_object(entry);
+    Some(HubServer {
+        address,
+        name: value_string(status.and_then(|status| status.get("name"))),
+        players: value_int(status.and_then(|status| status.get("players"))),
+        soft_max_players: value_int(status.and_then(|status| status.get("soft_max_players"))),
+        tags: merge_tags(
+            value_strings(status.and_then(|status| status.get("tags"))),
+            value_strings(entry.get("inferredTags")),
+        ),
+        preset: value_string(status.and_then(|status| status.get("preset"))),
+        map: value_string(status.and_then(|status| status.get("map"))),
+        run_level: value_int(status.and_then(|status| status.get("run_level"))),
+        round_id: value_int(status.and_then(|status| status.get("round_id"))),
+        status_message: value_string(status.and_then(|status| status.get("statusMessage"))),
+        round_start_time: value_string(
+            status
+                .and_then(|status| status.get("round_start_time"))
+                .or_else(|| status.and_then(|status| status.get("roundStartTime"))),
+        ),
+        panic_bunker: value_bool(status.and_then(|status| status.get("panic_bunker"))),
+        baby_jail: value_bool(status.and_then(|status| status.get("baby_jail"))),
+        queue: value_int(status.and_then(|status| status.get("queue"))),
+        hub: String::new(),
+    })
+}
+
+fn body_snippet(body: &str) -> String {
+    let flat: String = body
+        .chars()
+        .map(|character| {
+            if character.is_whitespace() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect();
+    let trimmed = flat.trim();
+    let mut snippet: String = trimmed.chars().take(96).collect();
+    if trimmed.chars().count() > 96 {
+        snippet.push('…');
+    }
+    snippet
+}
+
+pub fn parse_hub_body(body: &str) -> Result<Vec<HubServer>, String> {
+    let trimmed = body.trim();
+    let array = if trimmed.starts_with('[') {
+        trimmed
+    } else {
+        let start = trimmed.find('[');
+        let end = trimmed.rfind(']');
+        match (start, end) {
+            (Some(start), Some(end)) if end > start => &trimmed[start..=end],
+            _ => {
+                return Err(format!(
+                    "не удалось разобрать список серверов (ответ: {})",
+                    body_snippet(trimmed)
+                ))
+            }
+        }
+    };
+    let entries: Vec<serde_json::Value> = serde_json::from_str(array).map_err(|_| {
+        format!(
+            "не удалось разобрать список серверов (ответ: {})",
+            body_snippet(trimmed)
+        )
+    })?;
+    Ok(entries.iter().filter_map(hub_server_from_value).collect())
 }
 
 pub fn normalize_server_address(server_url: &str) -> String {
@@ -142,29 +204,6 @@ pub fn normalize_server_address(server_url: &str) -> String {
         return format!("http://{rest}");
     }
     trimmed.to_string()
-}
-
-impl From<HubEntry> for HubServer {
-    fn from(entry: HubEntry) -> Self {
-        let status = entry.status_data;
-        HubServer {
-            address: entry.address,
-            name: status.name,
-            players: status.players,
-            soft_max_players: status.soft_max_players,
-            tags: merge_tags(status.tags, entry.inferred_tags),
-            preset: status.preset,
-            map: status.map,
-            run_level: status.run_level,
-            round_id: status.round_id,
-            status_message: status.status_message,
-            round_start_time: status.round_start_time,
-            panic_bunker: status.panic_bunker,
-            baby_jail: status.baby_jail,
-            queue: status.queue,
-            hub: String::new(),
-        }
-    }
 }
 
 pub fn hub_url(value: &str) -> String {
@@ -189,15 +228,23 @@ fn fetch_hub_servers(hub: &str) -> Result<Vec<HubServer>, String> {
     }
 }
 
-fn fetch_hub_at(hub: &str) -> Result<Vec<HubServer>, String> {
-    let client = crate::http::with_route(
+const HUB_ATTEMPTS: usize = 2;
+const HUB_RETRY_PAUSE: Duration = Duration::from_millis(600);
+
+fn hub_client() -> Result<reqwest::blocking::Client, String> {
+    crate::http::with_route(
         reqwest::blocking::Client::builder(),
         crate::http::Route::Launcher,
     )
     .timeout(Duration::from_secs(20))
     .build()
-    .map_err(|error| error.to_string())?;
-    let endpoint = format!("{}api/servers", hub_url(hub));
+    .map_err(|error| error.to_string())
+}
+
+fn fetch_once(
+    client: &reqwest::blocking::Client,
+    endpoint: &str,
+) -> Result<Vec<HubServer>, String> {
     let response = client
         .get(endpoint)
         .send()
@@ -205,10 +252,26 @@ fn fetch_hub_at(hub: &str) -> Result<Vec<HubServer>, String> {
     let response = response
         .error_for_status()
         .map_err(|error| format!("хаб ответил с ошибкой: {error}"))?;
-    let entries: Vec<HubEntry> = response
-        .json()
-        .map_err(|error| format!("не удалось разобрать список серверов: {error}"))?;
-    Ok(entries.into_iter().map(HubServer::from).collect())
+    let body = response
+        .text()
+        .map_err(|error| format!("хаб оборвал ответ: {error}"))?;
+    parse_hub_body(&body)
+}
+
+fn fetch_hub_at(hub: &str) -> Result<Vec<HubServer>, String> {
+    let client = hub_client()?;
+    let endpoint = format!("{}api/servers", hub_url(hub));
+    let mut last_error = String::new();
+    for attempt in 0..HUB_ATTEMPTS {
+        if attempt > 0 {
+            thread::sleep(HUB_RETRY_PAUSE);
+        }
+        match fetch_once(&client, &endpoint) {
+            Ok(servers) => return Ok(servers),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
 }
 
 pub fn fetch_servers(hub: &str) -> Result<Vec<HubServer>, String> {
@@ -359,11 +422,7 @@ mod tests {
             {"address":"ss14://b.example","statusData":null},
             {"address":"ss14://c.example","statusData":{"name":"C","tags":["rp:med","lang:ru"],"panic_bunker":true,"baby_jail":false},"inferredTags":["rp:med","18+"]}
         ]"#;
-        let servers: Vec<HubServer> = serde_json::from_str::<Vec<HubEntry>>(raw)
-            .unwrap()
-            .into_iter()
-            .map(HubServer::from)
-            .collect();
+        let servers = parse_hub_body(raw).unwrap();
         assert_eq!(servers.len(), 3);
         assert_eq!(servers[0].map, "");
         assert_eq!(servers[0].preset, "");
@@ -398,11 +457,7 @@ mod tests {
             {"address":"ss14://wormix14.site","statusData":{"name":"Wormix","players":32,"soft_max_players":40,"tags":["lang:ru"],"preset":"Гриншифт","map":"Box","run_level":1,"round_id":1437,"statusMessage":"привет","round_start_time":"2026-01-01T10:00:00Z"}},
             {"address":"ss14s://erida.example.net","statusData":{"name":"Эрида","players":25}}
         ]"#;
-        let servers: Vec<HubServer> = serde_json::from_str::<Vec<HubEntry>>(raw)
-            .unwrap()
-            .into_iter()
-            .map(HubServer::from)
-            .collect();
+        let servers = parse_hub_body(raw).unwrap();
         assert_eq!(servers.len(), 2);
         assert_eq!(servers[0].players, 32);
         assert_eq!(servers[0].soft_max_players, 40);
@@ -411,6 +466,63 @@ mod tests {
         assert_eq!(servers[1].soft_max_players, 0);
         assert_eq!(servers[1].round_start_time, "");
         assert!(!servers[0].panic_bunker);
+    }
+
+    #[test]
+    fn skips_junk_and_coerces_types() {
+        let raw = r#"[
+            42,
+            null,
+            "string entry",
+            {"statusData":{"name":"no address"}},
+            {"address":"ss14://a.example","statusData":"offline","inferredTags":["lang:ru",null,""]},
+            {"address":"ss14://b.example","statusData":{"name":"B","players":12.7,"soft_max_players":"40","tags":["rp:lrp",null],"queue":"3","panic_bunker":1}}
+        ]"#;
+        let servers = parse_hub_body(raw).unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].address, "ss14://a.example");
+        assert!(servers[0].name.is_empty());
+        assert_eq!(servers[0].tags, vec!["lang:ru"]);
+        assert_eq!(servers[0].players, 0);
+        assert_eq!(servers[1].name, "B");
+        assert_eq!(servers[1].players, 12);
+        assert_eq!(servers[1].soft_max_players, 40);
+        assert_eq!(servers[1].tags, vec!["rp:low"]);
+        assert_eq!(servers[1].queue, 3);
+        assert!(!servers[1].panic_bunker);
+    }
+
+    #[test]
+    fn empty_list_is_valid() {
+        assert!(parse_hub_body("[]").unwrap().is_empty());
+        assert!(parse_hub_body("  \n[] ").unwrap().is_empty());
+    }
+
+    #[test]
+    fn extracts_array_from_wrapped_body() {
+        let servers = parse_hub_body(
+            "сервер вернул {\"ok\":true} [ {\"address\":\"ss14://a.example\",\"statusData\":{\"name\":\"A\"}} ] конец",
+        )
+        .unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "A");
+    }
+
+    #[test]
+    fn garbage_body_reports_snippet() {
+        let error = parse_hub_body("<html>access denied</html>").unwrap_err();
+        assert!(error.contains("не удалось разобрать список серверов"));
+        assert!(error.contains("access denied"));
+    }
+
+    #[test]
+    fn accepts_status_alias_and_url_field() {
+        let raw = r#"[{"url":"ss14://a.example","status":{"name":"A","players":5}}]"#;
+        let servers = parse_hub_body(raw).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].address, "ss14://a.example");
+        assert_eq!(servers[0].name, "A");
+        assert_eq!(servers[0].players, 5);
     }
 
     #[test]
